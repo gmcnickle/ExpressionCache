@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Pester: Run ExpressionCache tests",
+      "type": "PowerShell",
+      "request": "launch",
+      "script": "${workspaceFolder}/tests/run-tests.ps1",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "createTemporaryIntegratedConsole": true
+    },
+    {
+      "name": "Pester: Debug ExpressionCache tests",
+      "type": "PowerShell",
+      "request": "launch",
+      "script": "${workspaceFolder}/tests/run-tests.ps1",
+      "args": ["-Debug"],
+      "cwd": "${workspaceFolder}",
+      "createTemporaryIntegratedConsole": true
+    }
+  ]
+}
