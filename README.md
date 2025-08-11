@@ -1,9 +1,26 @@
 # ExpressionCache
 
-Lightweight, pluggable caching for PowerShell *expressions* (scriptblocks). You provide a `{ ... }` to run (plus optional args); a storage *provider* handles lookup, freshness, and persistence.
+<p align="center">
+  <!-- <a href="https://github.com/gmcnickle/ExpressionCache/actions/workflows/tests.yml">
+    <img alt="CI" src="https://github.com/gmcnickle/ExpressionCache/actions/workflows/tests.yml/badge.svg">
+  </a> -->
+  <a href="LICENSE">
+    <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg">
+  </a>
+  <a href="https://www.powershellgallery.com/packages/ExpressionCache">
+    <img alt="PSGallery Version" src="https://img.shields.io/powershellgallery/v/ExpressionCache">
+  </a>
+  <a href="https://www.powershellgallery.com/packages/ExpressionCache">
+    <img alt="PSGallery Downloads" src="https://img.shields.io/powershellgallery/dt/ExpressionCache">
+  </a>
+  <!-- Optional: Code coverage (if you add Codecov) -->
+  <!-- <a href="https://codecov.io/gh/gmcnickle/ExpressionCache">
+    <img alt="Coverage" src="https://codecov.io/gh/gmcnickle/ExpressionCache/branch/main/graph/badge.svg">
+  </a> -->
+</p>
 
-![Made with PowerShell](https://img.shields.io/badge/Made%20with-PowerShell-012456?style=flat-square&logo=powershell&logoColor=white)
-[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by/4.0/)
+
+Lightweight, pluggable caching for PowerShell *expressions* (scriptblocks). You provide a `{ ... }` to run (plus optional args); a storage *provider* handles lookup, freshness, and persistence.
 
 ---
 
@@ -125,21 +142,9 @@ tests/
 
 ---
 
-## Roadmap / ideas
+## License
 
-- In-memory and Redis providers
-- Optional `DefaultCommandPrefix` in the manifest (e.g., `EC`)
-- Example gallery module packaging
-
----
-
-## 📜 License
-
-Creative Commons Attribution 4.0 International (CC BY 4.0)  
-© 2025 Gary McNickle
-
-This work is licensed under the Creative Commons Attribution 4.0 International License.  
-To view a copy of this license, visit [creativecommons.org/licenses/by/4.0](http://creativecommons.org/licenses/by/4.0/).
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ---
 

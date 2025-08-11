@@ -15,13 +15,10 @@
     AliasesToExport   = @()
 
     PrivateData = @{
-        PSData = @{
-            Tags       = @('caching', 'powershell')
-            ProjectUri = 'https://github.com/gmcnickle/expression-cache'
-            # Optional:
-            # LicenseUri  = '...'
-            # IconUri     = '...'
-            # ReleaseNotes = '...'
-        }
+    PSData = @{
+        LicenseUri  = 'https://opensource.org/license/mit/' 
+        ProjectUri  = 'https://github.com/gmcnickle/ExpressionCache'
+        Tags        = @('caching','powershell','scriptblock')
+        ReleaseNotes = ''
     }
 }
