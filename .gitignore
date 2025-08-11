@@ -1,0 +1,25 @@
+# Build / packaging
+*.nupkg
+*.zip
+dist/
+bin/
+obj/
+
+# VS Code / IDE
+.vscode/
+*.code-workspace
+.idea/
+*.suo
+*.user
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+TestResults/
+.coverage*
+*.trx
+
+# PowerShell cache
+*.pscache
