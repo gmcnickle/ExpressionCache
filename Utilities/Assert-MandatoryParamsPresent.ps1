@@ -8,9 +8,9 @@ function Assert-MandatoryParamsPresent {
     )
 
     $mandatory =
-        (Get-Command $CommandName -ErrorAction Stop).Parameters.Values |
-        Where-Object { $_.Attributes.Where({ $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory }).Count } |
-        ForEach-Object Name
+    (Get-Command $CommandName -ErrorAction Stop).Parameters.Values |
+    Where-Object { $_.Attributes.Where({ $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory }).Count } |
+    ForEach-Object Name
 
     $missing = $mandatory | Where-Object { -not $Splat.ContainsKey($_) }
 

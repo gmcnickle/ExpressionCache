@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/pester/Pester/main/docs/pester.schema.json",
+  "Run": {
+    "Path": [
+      "tests"           
+    ],
+    "TestExtension": [
+      ".Tests.ps1"      
+    ],
+    "Exit": true        
+  },
+  "Output": {
+    "Verbosity": "Normal",
+    "CIFormat": "Auto"    
+  },
+  "CodeCoverage": {
+    "Enabled": false 
+  }
+}

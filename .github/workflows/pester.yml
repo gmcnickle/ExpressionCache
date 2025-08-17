@@ -1,0 +1,83 @@
+name: CI — Lint & Tests
+run-name: PR • ${{ github.event.pull_request.title || github.ref_name }}
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  test-windows:
+    name: Windows • Lint + Pester
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PowerShell
+        uses: actions/setup-powershell@v2
+
+      - name: Cache PowerShell modules
+        uses: actions/cache@v4
+        with:
+          path: ~\Documents\PowerShell\Modules
+          key: pwsh-mods-${{ runner.os }}-pester-5.7.1-pssa-1.22.0
+          restore-keys: |
+            pwsh-mods-${{ runner.os }}-
+
+      - name: Lint (PSScriptAnalyzer)
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $settings = '.pssa/PSScriptAnalyzerSettings.psd1'
+          Invoke-ScriptAnalyzer -Path . -Settings $settings -Recurse -Severity Error |
+            Tee-Object -Variable findings
+          if ($findings | Where-Object Severity -eq 'Error') {
+            throw "PSScriptAnalyzer errors detected."
+          }
+
+      - name: Install Pester 5.x
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -MinimumVersion 5.7.1 -Scope CurrentUser -Force
+          Import-Module Pester -MinimumVersion 5.7.1
+
+      - name: Run Pester (NUnit XML)
+        shell: pwsh
+        run: |
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'tests'
+          $config.Run.PassThru = $true
+          $config.Run.Exit = $true
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputFormat = 'NUnitXml'
+          $config.TestResult.OutputPath = 'TestResults.xml'
+          Invoke-Pester -Configuration $config
+
+      - name: Upload raw test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pester-Results
+          path: TestResults.xml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Pester (Windows)
+          path: TestResults.xml
+          reporter: nunit
+          fail-on-error: false

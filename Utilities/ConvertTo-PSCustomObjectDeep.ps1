@@ -15,7 +15,7 @@ function ConvertTo-PSCustomObjectDeep {
             return $out
         }
         { $_ -is [System.Collections.IEnumerable] -and $_ -isnot [string] } {
-            $list = @(); foreach ($item in $_) { $list += ,(ConvertTo-PSCustomObjectDeep $item) }; return $list
+            $list = @(); foreach ($item in $_) { $list += , (ConvertTo-PSCustomObjectDeep $item) }; return $list
         }
 
         default { 

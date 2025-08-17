@@ -52,7 +52,7 @@ Prefer parameters over ambient variables inside your scriptblock. If you must ca
 ## Public API
 
 - `Initialize-ExpressionCache -AppName <string> [-Providers <object[]>]`
-- `Get-ExpressionCache -ScriptBlock <scriptblock> [-Arguments <object[]>] [-Key <string>] [-StorageType <string>]`
+- `Get-ExpressionCache -ScriptBlock <scriptblock> [-Arguments <object[]>] [-Key <string>] [-ProviderName <string>]`
 - `Add-ExpressionCacheProvider -Provider <object>`
 - `Get-ExpressionCacheProvider [-Name <string>]`
 - `Remove-ExpressionCacheProvider -Name <string> [-PassThru]`
@@ -71,7 +71,7 @@ $provider = [pscustomobject]@{
     Initialized  = $false
   }
   Initialize    = 'Initialize-LocalFileSystemCache'  # optional
-  ReadFromCache = 'Get-FileSystem-CachedValue'       # required
+  GetOrCreate = 'Get-FileSystem-CachedValue'       # required
 }
 Add-ExpressionCacheProvider -Provider $provider
 ```
@@ -138,7 +138,7 @@ tests/
 - **Single source of truth:** provider settings live in `Config`.
 - **Explicit execution:** call sites pass a **scriptblock**; providers choose how to cache.
 - **Safety:** avoids `Invoke-Expression`; favors parameters over ambient variables.
-- **Extensible:** add providers (Redis, S3, memory) by implementing `ReadFromCache` (and optional `Initialize`).
+- **Extensible:** add providers (Redis, S3, memory) by implementing `GetOrCreate` (and optional `Initialize`).
 
 ---
 

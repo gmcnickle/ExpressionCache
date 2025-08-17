@@ -1,0 +1,51 @@
+name: Bump & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part to bump?
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major]
+
+permissions:
+  contents: write   # required to push commit, tag, and create release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # so tags/history are available
+
+      - name: Setup PowerShell
+        uses: actions/setup-powershell@v2
+
+      - name: Bump version in psd1
+        id: bump
+        shell: pwsh
+        run: |
+          ./scripts/Update-ModuleVersion.ps1 `
+            -Bump '${{ github.event.inputs.bump }}' `
+            -ManifestPath './ExpressionCache.psd1'
+
+      - name: Commit version bump
+        shell: bash
+        run: |
+          NEW_VERSION="$(grep -Po "(?<=ModuleVersion = ')[^']+" ExpressionCache.psd1)"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ExpressionCache.psd1
+          git commit -m "chore(release): bump to $NEW_VERSION"
+          git tag "v$NEW_VERSION"
+          git push --follow-tags
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.bump.outputs.NEW_VERSION }}
+          generate_release_notes: true

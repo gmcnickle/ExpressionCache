@@ -1,7 +1,7 @@
 @{
     # Core
     RootModule        = 'ExpressionCache.psm1'
-    ModuleVersion     = '1.0.0'
+    ModuleVersion     = '0.1.0'
     GUID              = '4ebe238d-ac4f-4731-a0b3-73fe7d28f97d'
     Author            = 'Gary McNickle'
     Copyright         = 'Copyright (c) 2025'
@@ -13,12 +13,12 @@
     VariablesToExport = @()
     AliasesToExport   = @()
 
-    PrivateData = @{
+    PrivateData       = @{
         PSData = @{
-                LicenseUri  = 'https://opensource.org/license/mit/' 
-                ProjectUri  = 'https://github.com/gmcnickle/ExpressionCache'
-                Tags        = @('caching','powershell','scriptblock')
-                ReleaseNotes = ''
-            }
+            LicenseUri   = 'https://opensource.org/license/mit/' 
+            ProjectUri   = 'https://github.com/gmcnickle/ExpressionCache'
+            Tags         = @('caching', 'powershell', 'scriptblock')
+            ReleaseNotes = ''
         }
+    }
 }

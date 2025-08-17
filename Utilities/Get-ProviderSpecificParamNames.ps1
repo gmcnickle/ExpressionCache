@@ -1,6 +1,8 @@
 function Get-ProviderSpecificParamNames {
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Intentional plural for clarity: returns multiple parameter names.')]
     param(
-        [Parameter(Mandatory)][string]$CommandName
+        [Parameter(Mandatory)]
+        [string]$CommandName
     )
     
     $paramInfo = (Get-Command $CommandName -ErrorAction Stop).Parameters

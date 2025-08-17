@@ -2,7 +2,7 @@ function New-DirectoryIfMissing {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
     param(
         [Parameter(Mandatory, ValueFromPipeline, ValueFromPipelineByPropertyName)]
-        [Alias('Path','FullName')]
+        [Alias('Path', 'FullName')]
         [string]$Folder,
 
         [switch]$PassThru

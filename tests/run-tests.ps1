@@ -1,5 +1,6 @@
 param(
-  [string]$Path = "$PSScriptRoot/ExpressionCache.Tests.ps1",
+#  [string]$Path = "$PSScriptRoot/ExpressionCache.Tests.ps1",
+  [string]$Path = "$PSScriptRoot",
   [switch]$Debug
 )
 
@@ -10,8 +11,9 @@ Remove-Module ExpressionCache -ErrorAction SilentlyContinue
 Import-Module "$PSScriptRoot/../ExpressionCache.psd1" -Force   # or: "$PSScriptRoot/.."
 
 # Build a Pester v5 config and use ONLY -Configuration
-$conf = New-PesterConfiguration
-$conf.Run.Path = $Path
+$conf = [PesterConfiguration]::Default #New-PesterConfiguration
+$conf.Run.Path = @($Path)
+$conf.Run.Exit = $true
 $conf.Output.Verbosity = 'Detailed'
 
 

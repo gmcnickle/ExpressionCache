@@ -9,7 +9,7 @@ function Test-ExpressionCacheProviderSpec {
         $Spec = [pscustomobject]$Spec 
     }
 
-    $required = 'Name','ReadFromCache','Config'
+    $required = 'Name', 'GetOrCreate', 'Config'
     foreach ($r in $required) {
         if (-not ($Spec.PSObject.Properties.Name -contains $r) -or -not $Spec.$r) {
             throw "ExpressionCache: Provider spec missing required property '$r'."
@@ -17,7 +17,7 @@ function Test-ExpressionCacheProviderSpec {
     }
 
     # Ensure command names resolve
-    foreach ($cmdProp in 'ReadFromCache','Initialize') {
+    foreach ($cmdProp in 'GetOrCreate', 'Initialize') {
         $cmd = $Spec.$cmdProp
 
         if ($cmd) {
