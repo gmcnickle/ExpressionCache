@@ -1,5 +1,5 @@
 #requires -Modules Pester
-Import-Module "$PSScriptRoot/../ExpressionCache.psd1" -Force
+Import-Module "$PSScriptRoot/../src/ExpressionCache.psd1" -Force
 
 
 InModuleScope ExpressionCache {

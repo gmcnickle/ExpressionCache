@@ -8,7 +8,7 @@
     PowerShellVersion = '5.1' 
 
     # Exports
-    FunctionsToExport = '*'
+    #FunctionsToExport = @()  
     CmdletsToExport   = @()
     VariablesToExport = @()
     AliasesToExport   = @()

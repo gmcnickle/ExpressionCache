@@ -4,25 +4,23 @@
 $script:Config = $null
 $script:RegisteredStorageProviders = @()
 
+$utilitiesFolder = (Join-Path $PSScriptRoot 'Utilities')
 # --- Load Utilities ---
-Get-ChildItem -Path (Join-Path $PSScriptRoot 'Utilities') -Filter *.ps1 -ErrorAction SilentlyContinue |
+Get-ChildItem -Path $utilitiesFolder -Filter *.ps1 -ErrorAction SilentlyContinue |
   Sort-Object Name |
   ForEach-Object { . $_.FullName }
 
+$providersFolder = (Join-Path $PSScriptRoot 'Providers')
 # --- Load Providers ---
-Get-ChildItem -Path (Join-Path $PSScriptRoot 'Providers') -Filter *.ps1 -ErrorAction SilentlyContinue |
+Get-ChildItem -Path $providersFolder -Filter *.ps1 -ErrorAction SilentlyContinue |
   Sort-Object Name |
   ForEach-Object { . $_.FullName }
 
+$publicFolder = Join-Path $PSScriptRoot 'Public'
 # --- Load Public ---
-$publicDir = Join-Path $PSScriptRoot 'Public'
-$publicFiles = @()
-if (Test-Path $publicDir) {
-  $publicFiles = Get-ChildItem -Path $publicDir -Filter *.ps1 -ErrorAction SilentlyContinue | Sort-Object Name
+if (Test-Path $publicFolder) {
+  $publicFiles = Get-ChildItem -Path $publicFolder -Filter *.ps1 -ErrorAction SilentlyContinue | Sort-Object Name
   foreach ($f in $publicFiles) { . $f.FullName }
-}
-
-if ($publicFiles) {
   Export-ModuleMember -Function $publicFiles.BaseName
 }
 
