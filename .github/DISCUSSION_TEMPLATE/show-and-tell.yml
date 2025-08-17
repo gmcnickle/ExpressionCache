@@ -1,0 +1,19 @@
+title: "[Show & Tell]: "
+labels: [community]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 🚀 Show & Tell
+        Share how you’re using ExpressionCache in your projects.
+  - type: textarea
+    id: details
+    attributes:
+      label: Project details
+      description: What did you build? How did ExpressionCache help?
+      placeholder: "I used ExpressionCache to..."
+  - type: textarea
+    id: links
+    attributes:
+      label: Links or resources
+      description: Feel free to share code, blog posts, or demos.

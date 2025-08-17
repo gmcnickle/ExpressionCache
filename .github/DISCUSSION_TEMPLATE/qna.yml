@@ -1,0 +1,21 @@
+title: "[Question]: "
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## ❓ Ask a Question
+        Use this category for troubleshooting, usage questions, or setup help.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do? What’s not working as expected?
+      placeholder: "I'm trying to..."
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include logs, code snippets, or version info if relevant.
