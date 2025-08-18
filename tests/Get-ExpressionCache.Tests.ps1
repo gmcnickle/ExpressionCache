@@ -1,5 +1,5 @@
 ﻿#requires -Modules Pester
-Import-Module "$PSScriptRoot/../src/ExpressionCache.psd1" -Force
+
 
 # Quick connectivity probe (TCP) – used only to decide whether to skip Redis tests
 function Test-RedisAvailable {
@@ -31,13 +31,12 @@ function script:Reset-ProviderState {
     [psobject]$Provider
   )
 
-  $name = $Provider.Name
-  $prov = Get-ExpressionCacheProvider -Name $name
-  if (-not $prov) {
+  if (-not $Provider) {
     Write-Verbose "Reset: provider '$name' not registered."
     return
   }
 
+  $name = $Provider.Name
   $target = "Provider '$name'"
   if ($PSCmdlet.ShouldProcess($target, 'Reset (clear cache)')) {
     try {
@@ -53,6 +52,56 @@ function script:Reset-ProviderState {
 
 
 Describe 'ExpressionCache :: Providers' {
+
+  BeforeAll {
+    $cwd = (Get-Location).Path
+
+    $psd1Path = Join-Path $cwd 'src/ExpressionCache.psd1'
+    if (-not (Test-Path $psd1Path)) { throw "Cannot locate $psd1Path" }
+    Import-Module $psd1Path -Force
+
+    $SupportPath = Join-Path $cwd 'tests/support/common.ps1'
+    if (-not (Test-Path $SupportPath)) { throw "Cannot locate $SupportPath" }
+    . $SupportPath -ModulePath $psd1Path
+
+    # Build test-specific provider configs (prefix etc.) here in RUN phase:
+    $testPrefix = 'test:' + [guid]::NewGuid().ToString('N') + ':'
+
+    $providerConfigs = @(
+      @{ Key = 'LocalFileSystemCache'; Config = @{ Prefix = $testPrefix } }
+    )
+
+    $enableRedis =
+    $IsLinux -and
+    $env:EXPRCACHE_SKIP_REDIS -ne '1' -and
+    -not [string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)
+
+    if ($enableRedis) {
+      $providerConfigs += @{ Key = 'Redis'; Config = @{ Database = 15; Prefix = $testPrefix } }
+    }
+
+    $providers = Initialize-ExpressionCache -AppName 'TestApp' -Providers $providerConfigs
+
+    $script:Cases = @()
+
+    $fs = $providers | Where-Object Name -eq 'LocalFileSystemCache'
+    if ($fs) {
+      $script:Cases += @{ Provider = $fs; ProviderName = $fs.Name; SkipReason = $null }
+    }
+
+    if ($enableRedis) {
+      $rd = $providers | Where-Object Name -eq 'Redis'
+      if ($rd) {
+        $script:Cases += @{ Provider = $rd; ProviderName = $rd.Name; SkipReason = $null }
+      }
+    }
+    else {
+      $script:Cases += @{ Provider = $null; ProviderName = 'Redis'; SkipReason = 'Redis disabled on this environment.' }
+    }
+  }
+
+  # BeforeEach { Reset-Providers-ForTests }
+  # AfterEach { Reset-Providers-ForTests }
 
   BeforeDiscovery {
     $testPrefix = 'test:' + [guid]::NewGuid().ToString('N') + ':'
@@ -220,24 +269,41 @@ Describe 'ExpressionCache :: Providers' {
     It 'invalidates cache when CacheVersion changes (FS only)' -TestCases $script:Cases {
       param($Provider, $ProviderName, $SkipReason)
       if ($SkipReason) { Set-ItResult -Skipped -Because $SkipReason; return }
+      if ($ProviderName -ne 'LocalFileSystemCache') { Set-ItResult -Skipped -Because 'Not applicable to this provider'; return }
 
-      if ($provider.Name -ne 'LocalFileSystemCache') {
-        Set-ItResult -Skipped -Because 'Not applicable to this provider'
-        return
-      }
-
-      Reset-ProviderState $provider
+      Reset-ProviderState $Provider
 
       $exec = @{ Value = 0 }
       $sb = { param($x, $y) $exec.Value++; $x + $y }.GetNewClosure()
 
-      Get-ExpressionCache -ProviderName $ProviderName -ScriptBlock $sb -Arguments 1, 2 | Out-Null
+      # Warm cache
+      Get-ExpressionCache -ProviderName $ProviderName -ScriptBlock $sb -Arguments 1, 2 | Should -Be 3
       $exec.Value | Should -Be 1
 
-      $provider.Config.CacheVersion = '2'
-      Get-ExpressionCache -ProviderName $ProviderName -ScriptBlock $sb -Arguments 1, 2 | Should -Be 3
-      $exec.Value | Should -Be 2
+      # Compute next version while preserving type
+      $oldVersion = (Get-ExpressionCacheProvider -ProviderName $ProviderName).Config.CacheVersion
+      $nextVersion = if ($oldVersion -is [int]) { $oldVersion + 1 } else { "$oldVersion:next" }
+
+      # Mutate live provider inside module scope
+      InModuleScope ExpressionCache -Parameters @{ Name = $ProviderName; Next = $nextVersion } {
+        $scopedProvider = Get-ExpressionCacheProvider -ProviderName $Name
+        $scopedProvider.Config | Set-ECProperty -Name 'CacheVersion' -Value $Next
+        (Get-ExpressionCacheProvider -ProviderName $Name).Config.CacheVersion | Should -Be $Next
+      }
+
+      try {
+        # Should miss and recompute
+        Get-ExpressionCache -ProviderName $ProviderName -ScriptBlock $sb -Arguments 1, 2 | Should -Be 3
+        $exec.Value | Should -Be 2
+      }
+      finally {
+        InModuleScope ExpressionCache -Parameters @{ Name = $ProviderName; Old = $oldVersion } {
+          $scopedProvider = Get-ExpressionCacheProvider -ProviderName $Name
+          $scopedProvider.Config | Set-ECProperty -Name 'CacheVersion' -Value $Old
+        }
+      }
     }
+   
   }
 
   Context 'Clear-ExpressionCache' {
@@ -284,20 +350,17 @@ Describe 'ExpressionCache :: Providers' {
       Should -Throw '*Provider*not registered*'
     }
 
-    It 'throws a clear error when provider function is missing' -TestCases $script:Cases {
-      param($Provider, $ProviderName, $SkipReason)
-      if ($SkipReason) { Set-ItResult -Skipped -Because $SkipReason; return }
+    It 'throws a clear error when provider function is missing (standalone)' {
+      $name = 'Broken-' + [guid]::NewGuid().ToString('N')
 
-      # Temporarily break the provider
-      $old = $provider.GetOrCreate
-      $provider.GetOrCreate = 'Totally-Not-Here'
-      try {
-        { Get-ExpressionCache -ProviderName $ProviderName -ScriptBlock { 1 } } |
-        Should -Throw '*Provider function*not found*'
-      }
-      finally {
-        $provider.GetOrCreate = $old
-      }
+      { Add-ExpressionCacheProvider -Provider @{
+          Name        = $name
+          GetOrCreate = 'Totally-Not-Here'   # doesn't exist
+          Config      = [pscustomobject]@{}
+        }
+      } | Should -Throw "*command 'Totally-Not-Here'*not found*"
+
+      { Get-ExpressionCache -ProviderName $name -ScriptBlock { 1 } } | Should -Throw '*Provider*not registered*'
     }
   }
 }
