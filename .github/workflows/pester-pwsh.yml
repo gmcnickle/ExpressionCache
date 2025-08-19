@@ -8,6 +8,6 @@ on:
 
 jobs:
   run:
-    uses: ./.github/workflows/pester-reusable.yml
+    uses: ./.github/workflows/reusable-pester.yml
     with:
       shell: pwsh
