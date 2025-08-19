@@ -44,8 +44,7 @@ Describe 'ExpressionCache :: Providers' {
 
   function script:Get-RedisEnabled {
     # does not check if you have redis running in a container on windows... If so, just return $true here...
-    return $false
-#    $IsLinux -and $env:EXPRCACHE_SKIP_REDIS -ne '1' -and -not [string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)
+    $IsLinux -and $env:EXPRCACHE_SKIP_REDIS -ne '1' -and -not [string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)
   }
 
   function script:Get-ProviderConfigs {
@@ -332,5 +331,27 @@ Describe 'ExpressionCache :: Providers' {
 
       { Get-ExpressionCache -ProviderName $name -ScriptBlock { 1 } } | Should -Throw '*Provider*not registered*'
     }
+
+    # TODO: Decide how to expose Merge-ExpressionCacheConfig...
+    # It 'overlays only specified keys, preserves others' {
+    #   $base = [pscustomobject]@{ Prefix = 'default:'; CacheVersion = 1 }
+    #   $ovr = @{ Prefix = 'custom:' }
+    #   Merge-ExpressionCacheConfig -Base $base -Overrides $ovr | Out-Null
+    #   $base.Prefix       | Should -Be 'custom:'
+    #   $base.CacheVersion | Should -Be 1
+    # }
+
+    # TODO: Decide how to expose Get-DefaultProviders...
+    # It 'does not mutate defaults inside Initialize-ExpressionCache' {
+    #   $defaults = Get-DefaultProviders
+    #   $orig = $defaults.LocalFileSystemCache.Config.Prefix
+
+    #   Initialize-ExpressionCache -AppName X -Providers @(
+    #     @{ Key = 'LocalFileSystemCache'; Config = @{ Prefix = 't:' } }
+    #   ) | Out-Null
+
+    #   (Get-DefaultProviders).LocalFileSystemCache.Config.Prefix | Should -Be $orig
+    # }
+
   }
 }

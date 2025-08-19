@@ -67,217 +67,78 @@ Get-ExpressionCache
 Get-ExpressionCacheProvider
 New-ExpressionCacheKey
 #>
+function Copy-PSCustomObject {
+  param([Parameter(Mandatory)][pscustomobject]$InputObject)
+  $copy = [pscustomobject]@{}
+  foreach ($p in $InputObject.PSObject.Properties) {
+    # shallow copy is fine for our flat configs
+    Add-Member -InputObject $copy -NotePropertyName $p.Name -NotePropertyValue $p.Value
+  }
+  return $copy
+}
+
 function Initialize-ExpressionCache {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$AppName,
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$AppName,
+    [object[]]$Providers
+  )
 
-        [Parameter()]
-        [object[]]$Providers
-    )
+  $script:Config = [pscustomobject]@{
+    AppName = $AppName
+    Version = $Script:moduleData.ModuleVersion
+  }
+  $script:RegisteredStorageProviders = @()
 
-    $script:Config = [pscustomobject]@{
-        AppName = $AppName
-        Version = $Script:moduleData.ModuleVersion
-    }
+  $defaults = Get-DefaultProviders
 
-    $script:RegisteredStorageProviders = @()
+  # Treat -Providers as an allow-list when present; otherwise use defaults
+  $explicit = $PSBoundParameters.ContainsKey('Providers') -and $Providers -and $Providers.Count -gt 0
+  $selected = @()
 
-    $defaults = Get-DefaultProviders
-
-    # Start with the module's standard providers (order matters)
-    $selected = @(
-        $defaults.LocalFileSystemCache
-        $defaults.Redis
-    )
-
-    # If the caller passes overrides/replacements, apply them
+  if (-not $explicit) {
+    $selected = @($defaults.LocalFileSystemCache, $defaults.Redis)
+  } else {
     foreach ($hint in ($Providers | Where-Object { $_ })) {
-        $resolved = Resolve-Provider -Hint $hint -DefaultMap $defaults
+      $resolved = Resolve-Provider -Hint $hint -DefaultMap $defaults
+      if (-not $resolved) { continue }
 
-        # If same .Name exists, replace; else append
-        $names = $selected | Select-Object -ExpandProperty Name
-        $existingIndex = [array]::IndexOf($names, $resolved.Name)  # -1 if not found
+      # If matches a known default, overlay config onto a *clone* of the default
+      $defaultMatch = switch -Regex ($resolved.Name) {
+        '^LocalFileSystemCache$' { $defaults.LocalFileSystemCache; break }
+        '^Redis$'                { $defaults.Redis; break }
+      }
 
-        if ($existingIndex -ge 0) { 
-            $selected[$existingIndex] = $resolved 
-        }
-        else { 
-            $selected += $resolved 
-        }
-    }
-
-    # Register them
-    foreach ($p in $selected) {
-        Add-ExpressionCacheProvider -Provider $p | Out-Null
-    }
-
-    return $script:RegisteredStorageProviders
-}
-
-function Get-DefaultProviders {
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Intentional plural for clarity: returns multiple providers.')]
-
-    # TODO: Move this to localfilesystem init... (pass appname)
-    $defaultCacheFolder =
-    if ($IsWindows) {
-        Join-Path $Env:LOCALAPPDATA "ExpressionCache\$($script:Config.AppName)"
-    }
-    else {
-        Join-Path $HOME ".cache/ExpressionCache/$($script:Config.AppName)"
-    }
-
-    # Return an ordered hashtable keyed by a short provider key
-    [ordered]@{
-        LocalFileSystemCache = [pscustomobject]@{
-            Name        = 'LocalFileSystemCache'
-            Description = 'Stores cached expressions in the local file system.'
-            Config      = [pscustomobject]@{
-                ProviderName  = 'LocalFileSystemCache'
-                CacheVersion  = 1
-                CacheFolder   = $defaultCacheFolder
-                DefaultMaxAge = (New-TimeSpan -Days 1)
-                Initialized   = $false
-            }
-
-            GetOrCreate = 'Get-LocalFileSystem-CachedValue'
-            Initialize  = 'Initialize-LocalFileSystem-Cache'
-            ClearCache  = 'Clear-LocalFileSystem-Cache'
+      if ($defaultMatch) {
+        $mergedConfig = Copy-PSCustomObject $defaultMatch.Config
+        if ($resolved.PSObject.Properties['Config'] -and $resolved.Config -is [System.Collections.IDictionary]) {
+          Merge-ExpressionCacheConfig -Base $mergedConfig -Overrides $resolved.Config | Out-Null
         }
 
-        Redis                = [pscustomobject]@{
-            Name        = 'redis-default'
-            Config      = [pscustomobject]@{
-                ProviderName  = 'redis-default' # used as key
-                Host          = '127.0.0.1'
-                Port          = 6379
-                Database      = 2
-                DefaultMaxAge = (New-TimeSpan -Days 1)
-                Prefix        = "ExpressionCache:v$($Script:moduleData.ModuleVersion.Major):$($script:Config.AppName)"
-                Password      = $env:EXPRCACHE_REDIS_PASSWORD ?? 'ChangeThisPassword!'
-            }
-
-            GetOrCreate = 'Get-Redis-CachedValue'
-            Initialize  = 'Initialize-Redis-Cache'
-            ClearCache  = 'Clear-Redis-Cache'
+        # Build a merged spec keeping default hooks
+        $selected += [pscustomobject]@{
+          Name        = $defaultMatch.Name
+          GetOrCreate = $defaultMatch.GetOrCreate
+          Initialize  = $defaultMatch.Initialize
+          ClearCache  = $defaultMatch.ClearCache
+          Config      = $mergedConfig
         }
+      }
+      else {
+        # Custom provider: use as-is (caller must supply functions & Config)
+        $selected += $resolved
+      }
     }
-}
+  }
 
-function Resolve-Provider {
-    param(
-        [Parameter(Mandatory)] 
-        $Hint,
+  foreach ($p in $selected) {
+    Add-ExpressionCacheProvider -Provider $p | Out-Null
+  }
 
-        [Parameter(Mandatory)] 
-        $DefaultMap  # from Get-DefaultProviders
-    )
-
-    switch ($Hint.GetType().FullName) {
-        'System.String' {
-            # Treat as a default key alias
-            if ($DefaultMap.Contains($Hint)) {
-                return $DefaultMap[$Hint]
-            }
-            # Allow matching by provider Name too
-            $byName = $DefaultMap.Values | Where-Object { $_.Name -eq $Hint }
-
-            if ($byName) { 
-                return $byName 
-            }
-
-            throw "Unknown provider key or name '$Hint'."
-        }
-
-        default {
-            # If it looks like a full provider, use it as-is
-            if ($Hint.PSObject.Properties.Name -contains 'GetOrCreate' -and $Hint.PSObject.Properties.Name -contains 'Initialize') {
-                return $Hint
-            }
-
-            # Otherwise treat it as an override onto a default
-            # Prefer 'Key' to pick the default entry; fallback to Name matching
-            $key = $Hint.Key
-            $base =
-            if ($key -and $DefaultMap.Contains($key)) {
-                $DefaultMap[$key]
-            } 
-            elseif ($Hint.Name) {
-                $DefaultMap.Values | Where-Object { $_.Name -eq $Hint.Name } | Select-Object -First 1
-            }
-
-            if (-not $base) { 
-                throw "Could not match override to a default provider (Key/Name missing or unknown)." 
-            }
-
-            return (Merge-ObjectDeep $base $Hint)
-        }
-    }
+  return $script:RegisteredStorageProviders
 }
 
 
-function Merge-ObjectDeep {
-    param(
-        [Parameter(Mandatory)] 
-        $Base,
-        
-        [Parameter(Mandatory)] 
-        $Override
-    )
-
-    if ($null -eq $Override) { 
-        return $Base 
-    }
-
-    # For hashtables and PSCustomObjects, walk properties
-    if ($Base -is [hashtable] -or $Base -is [pscustomobject]) {
-
-        $result = if ($Base -is [hashtable]) { 
-            @{} 
-        } 
-        else { 
-            [pscustomobject]@{} 
-        }
-
-        $allKeys = @(if ($Base -is [hashtable]) { $Base.Keys } else { $Base.PSObject.Properties.Name }) + @(if ($Override -is [hashtable]) { $Override.Keys } else { $Override.PSObject.Properties.Name }) | Select-Object -Unique
-
-        foreach ($k in $allKeys) {
-            $b = if ($Base -is [hashtable]) { 
-                $Base[$k] 
-            } 
-            else { 
-                $Base.$k 
-            }
-
-            $o = if ($Override -is [hashtable]) { 
-                $Override[$k] 
-            } 
-            else { 
-                $Override.$k 
-            }
-
-            if ($null -ne $o -and ($b -is [hashtable] -or $b -is [pscustomobject])) {
-                $result | Add-Member -NotePropertyName $k -NotePropertyValue (Merge-ObjectDeep $b $o)
-            } 
-            elseif ($null -ne $o) {
-                $result | Add-Member -NotePropertyName $k -NotePropertyValue $o
-            } 
-            else {
-                $result | Add-Member -NotePropertyName $k -NotePropertyValue $b
-            }
-        }
-        return $result
-    }
-
-    # For scalars/arrays: override wins if provided, else base
-    if ($null -ne $Override) { 
-        return $Override 
-    } 
-    else { 
-        return $Base 
-    }
-}
 
 
 
