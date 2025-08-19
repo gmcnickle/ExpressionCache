@@ -1,7 +1,7 @@
 @{
     # Core
     RootModule        = 'ExpressionCache.psm1'
-    ModuleVersion     = '0.1.0'
+    ModuleVersion     = '0.1.1'
     GUID              = '4ebe238d-ac4f-4731-a0b3-73fe7d28f97d'
     Author            = 'Gary McNickle'
     CompanyName       = 'RogueCivilian'
