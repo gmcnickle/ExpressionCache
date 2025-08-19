@@ -1,5 +1,5 @@
 function Get-DefaultProviders {
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Intentional plural for clarity: returns multiple providers.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Intentional plural for clarity: returns multiple providers.')]
 
     # TODO: Move this to localfilesystem init... (pass appname)
     $defaultCacheFolder =
@@ -37,7 +37,7 @@ function Get-DefaultProviders {
                 Database      = 2
                 DefaultMaxAge = (New-TimeSpan -Days 1)
                 Prefix        = "ExpressionCache:v$($Script:moduleData.ModuleVersion.Major):$($script:Config.AppName)"
-                Password      = $env:EXPRCACHE_REDIS_PASSWORD ?? 'ChangeThisPassword!'
+                Password      = if ($env:EXPRCACHE_REDIS_PASSWORD) { $env:EXPRCACHE_REDIS_PASSWORD} else {'ChangeThisPassword!'}
             }
 
             GetOrCreate = 'Get-Redis-CachedValue'

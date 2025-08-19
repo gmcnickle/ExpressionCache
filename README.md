@@ -23,6 +23,8 @@
 Lightweight, pluggable caching for PowerShell *expressions* (scriptblocks).  
 Designed for **ease of use** — you can cache the results of *any* expression that outputs data, with minimal configuration. Drop in a `{ ... }`, run once, and let a provider handle freshness, persistence, and lookup automatically.
 
+> ⚡ ExpressionCache is in preview. I’d love early developer feedback — try it out and open issues or discussions!
+
 ## Table of Contents
 
 - [Install](#-install)

@@ -1,5 +1,7 @@
 # Cache for parameter metadata to avoid repeated Get-Command lookups
-$script:__ParamCache = $script:__ParamCache ?? @{}
+if (-not $script:__ParamCache) {
+    $script:__ParamCache = @{}
+}
 
 function Build-CallableSplat {
     [CmdletBinding()]
@@ -117,7 +119,12 @@ function Build-CallableSplat {
     if ($Log) {
         if ($included.Count -gt 0) { Write-Verbose "$prefix included: $(($included -join ', '))" }
         if ($excluded.Count -gt 0) {
-            $pairs = $excluded | ForEach-Object { "$_ ($($reasons[$_] ?? 'reason:unknown'))" }
+            
+            $pairs = $excluded | ForEach-Object {
+                $reason = if ($null -ne $reasons[$_]) { $reasons[$_] } else { 'reason:unknown' }
+                "$_ ($reason)"
+            }
+
             Write-Verbose "$prefix excluded: $(($pairs -join ', '))"
         }
         Write-Verbose "$prefix final count: $($splat.Count)"
