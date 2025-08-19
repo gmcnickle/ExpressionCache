@@ -18,7 +18,7 @@ permissions:
 jobs:
   test-windows:
     name: Windows • Lint + Pester
-    runs-on: windows-latest
+    runs-on: windows-2022
     defaults:
       run:
         shell: pwsh
@@ -48,15 +48,16 @@ jobs:
           Install-Module Pester -MinimumVersion 5.7.1 -Scope CurrentUser -Force
           Import-Module Pester -MinimumVersion 5.7.1
 
-      - name: Run Pester (NUnit XML)
+      - name: Run Pester (JUnit XML)
         run: |
+          New-Item -ItemType Directory -Force -Path 'test-results' | Out-Null
           $config = New-PesterConfiguration
           $config.Run.Path = 'tests'
           $config.Run.PassThru = $true
           $config.Run.Exit = $true
           $config.TestResult.Enabled = $true
-          $config.TestResult.OutputFormat = 'NUnitXml'
-          $config.TestResult.OutputPath = 'TestResults.xml'
+          $config.TestResult.OutputFormat = 'JUnitXml'
+          $config.TestResult.OutputPath = 'test-results/pester-junit.xml'
           Invoke-Pester -Configuration $config
 
       - name: Upload raw test results
@@ -64,15 +65,16 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Pester-Results
-          path: TestResults.xml
+          path: test-results/pester-junit.xml
           if-no-files-found: error
           retention-days: 30
 
       - name: Publish test report
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v2
         with:
           name: Pester (Windows)
-          path: TestResults.xml
-          reporter: nunit
+          path: test-results/pester-junit.xml
+          reporter: java-junit
+          fail-on-empty: true
           fail-on-error: false
