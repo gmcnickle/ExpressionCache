@@ -1,57 +1,105 @@
 ﻿#requires -Modules Pester
 
-
-# Quick connectivity probe (TCP) – used only to decide whether to skip Redis tests
-function Test-RedisAvailable {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)]
-    [string]$HostName,
-    [Parameter(Mandatory)]
-    [int]$Port,
-    [int]$TimeoutMs = 1500
-  )
-  if ([string]::IsNullOrWhiteSpace($HostName)) { throw "HostName must be a non-empty string." }
-
-  $client = [System.Net.Sockets.TcpClient]::new()
-  try {
-    $async = $client.BeginConnect($HostName, $Port, $null, $null)
-    if (-not $async.AsyncWaitHandle.WaitOne([TimeSpan]::FromMilliseconds($TimeoutMs))) {
-      $client.Close(); return $false
-    }
-    $client.EndConnect($async); return $true
-  }
-  catch { return $false } finally { $client.Dispose() }
-}
-
-function script:Reset-ProviderState {
-  [CmdletBinding(SupportsShouldProcess = $true)]
-  param(
-    [Parameter(Mandatory)]
-    [psobject]$Provider
-  )
-
-  if (-not $Provider) {
-    Write-Verbose "Reset: provider '$name' not registered."
-    return
-  }
-
-  $name = $Provider.Name
-  $target = "Provider '$name'"
-  if ($PSCmdlet.ShouldProcess($target, 'Reset (clear cache)')) {
-    try {
-      # Ensure no prompts in tests; pass Force through to providers that honor it
-      Clear-ExpressionCache -ProviderName $name -Force -Confirm:$false -ErrorAction Stop | Out-Null
-    }
-    catch {
-      # If provider lacks a ClearCache hook or clearing fails, log and continue
-      Write-Verbose "Reset: failed to clear provider '$name': $($_.Exception.Message)"
-    }
-  }
-}
-
-
 Describe 'ExpressionCache :: Providers' {
+
+  function script:Reset-ProviderState {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param(
+      [Parameter(Mandatory)]
+      [psobject]$Provider
+    )
+
+    if (-not $Provider) {
+      Write-Verbose "Reset: provider '$name' not registered."
+      return
+    }
+
+    $name = $Provider.Name
+    $target = "Provider '$name'"
+    if ($PSCmdlet.ShouldProcess($target, 'Reset (clear cache)')) {
+      try {
+        # Ensure no prompts in tests; pass Force through to providers that honor it
+        Clear-ExpressionCache -ProviderName $name -Force -Confirm:$false -ErrorAction Stop | Out-Null
+      }
+      catch {
+        # If provider lacks a ClearCache hook or clearing fails, log and continue
+        Write-Verbose "Reset: failed to clear provider '$name': $($_.Exception.Message)"
+      }
+    }
+  }
+  
+  function script:Get-TestPrefix {
+    $result = @{}
+
+    InModuleScope ExpressionCache -Parameters @{Data = $result} {
+      if ($null -eq $script:get_expression_cache_tests_prefix) {
+        $script:get_expression_cache_tests_prefix = 'test:' + [guid]::NewGuid().ToString('N') + ':'
+
+        $Data["prefix"] = $script:get_expression_cache_tests_prefix
+      }
+    }
+
+    return $result["prefix"]
+  }
+
+  function script:Get-RedisEnabled {
+    # does not check if you have redis running in a container on windows... If so, just return $true here...
+    $IsLinux -and $env:EXPRCACHE_SKIP_REDIS -ne '1' -and -not [string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)
+  }
+
+  function script:Get-ProviderConfigs {
+    $testPrefix = Get-TestPrefix 
+
+    # Always include LocalFileSystemCache
+    $providerConfigs = @(
+      @{ Key = 'LocalFileSystemCache'; Config = @{ Prefix = $testPrefix } }
+    )
+
+    # Decide if Redis is eligible on this environment
+    $enableRedis = Get-RedisEnabled
+
+    if ($enableRedis) {
+      $providerConfigs += @{ Key = 'Redis'; Config = @{ Database = 15; Prefix = $testPrefix } }
+    }
+
+    # Initialize providers that are actually enabled
+    $providers = Initialize-ExpressionCache -AppName 'TestApp' -Providers $providerConfigs
+
+    # Build test cases: real LocalFS + real Redis (if enabled) + a "skipped" Redis case when not enabled
+    $testCases = @()
+
+    # Local FS (always present)
+    $fs = $providers | Where-Object Name -eq 'LocalFileSystemCache'
+    if ($fs) {
+      $testCases += @{
+        Provider     = $fs
+        ProviderName = $fs.Name
+        SkipReason   = $null
+      }
+    }
+
+    # Redis
+    if ($enableRedis) {
+      $rd = $providers | Where-Object Name -eq 'Redis'
+      if ($rd) {
+        $testCases += @{
+          Provider     = $rd
+          ProviderName = $rd.Name
+          SkipReason   = $null
+        }
+      }
+    }
+    else {
+      # Include a skipped Redis case so each It{} stays uniform across providers
+      $testCases += @{
+        Provider     = $null
+        ProviderName = 'Redis'
+        SkipReason   = 'Redis tests disabled on this environment (non-Linux or missing credentials).'
+      }
+    }    
+
+    return $testCases
+  }
 
   BeforeAll {
     $cwd = (Get-Location).Path
@@ -64,98 +112,12 @@ Describe 'ExpressionCache :: Providers' {
     if (-not (Test-Path $SupportPath)) { throw "Cannot locate $SupportPath" }
     . $SupportPath -ModulePath $psd1Path
 
-    # Build test-specific provider configs (prefix etc.) here in RUN phase:
-    $testPrefix = 'test:' + [guid]::NewGuid().ToString('N') + ':'
-
-    $providerConfigs = @(
-      @{ Key = 'LocalFileSystemCache'; Config = @{ Prefix = $testPrefix } }
-    )
-
-    $enableRedis =
-    $IsLinux -and
-    $env:EXPRCACHE_SKIP_REDIS -ne '1' -and
-    -not [string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)
-
-    if ($enableRedis) {
-      $providerConfigs += @{ Key = 'Redis'; Config = @{ Database = 15; Prefix = $testPrefix } }
-    }
-
-    $providers = Initialize-ExpressionCache -AppName 'TestApp' -Providers $providerConfigs
-
-    $script:Cases = @()
-
-    $fs = $providers | Where-Object Name -eq 'LocalFileSystemCache'
-    if ($fs) {
-      $script:Cases += @{ Provider = $fs; ProviderName = $fs.Name; SkipReason = $null }
-    }
-
-    if ($enableRedis) {
-      $rd = $providers | Where-Object Name -eq 'Redis'
-      if ($rd) {
-        $script:Cases += @{ Provider = $rd; ProviderName = $rd.Name; SkipReason = $null }
-      }
-    }
-    else {
-      $script:Cases += @{ Provider = $null; ProviderName = 'Redis'; SkipReason = 'Redis disabled on this environment.' }
-    }
+    # I hate the duplication here, but until I get this figured out, this will have to do...
+    $script:Cases = Get-ProviderConfigs
   }
 
-  # BeforeEach { Reset-Providers-ForTests }
-  # AfterEach { Reset-Providers-ForTests }
-
   BeforeDiscovery {
-    $testPrefix = 'test:' + [guid]::NewGuid().ToString('N') + ':'
-
-    # Always include LocalFileSystemCache
-    $providerConfigs = @(
-      @{ Key = 'LocalFileSystemCache'; Config = @{ Prefix = $testPrefix } }
-    )
-
-    # Decide if Redis is eligible on this environment
-    $enableRedis =
-    $IsLinux -and
-    $env:EXPRCACHE_SKIP_REDIS -ne '1' -and
-    -not [string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)
-
-    if ($enableRedis) {
-      $providerConfigs += @{ Key = 'Redis'; Config = @{ Database = 15; Prefix = $testPrefix } }
-    }
-
-    # Initialize providers that are actually enabled
-    $providers = Initialize-ExpressionCache -AppName 'TestApp' -Providers $providerConfigs
-
-    # Build test cases: real LocalFS + real Redis (if enabled) + a "skipped" Redis case when not enabled
-    $script:Cases = @()
-
-    # Local FS (always present)
-    $fs = $providers | Where-Object Name -eq 'LocalFileSystemCache'
-    if ($fs) {
-      $script:Cases += @{
-        Provider     = $fs
-        ProviderName = $fs.Name
-        SkipReason   = $null
-      }
-    }
-
-    # Redis
-    if ($enableRedis) {
-      $rd = $providers | Where-Object Name -eq 'Redis'
-      if ($rd) {
-        $script:Cases += @{
-          Provider     = $rd
-          ProviderName = $rd.Name
-          SkipReason   = $null
-        }
-      }
-    }
-    else {
-      # Include a skipped Redis case so each It{} stays uniform across providers
-      $script:Cases += @{
-        Provider     = $null
-        ProviderName = 'Redis'
-        SkipReason   = 'Redis tests disabled on this environment (non-Linux or missing credentials).'
-      }
-    }
+    $script:Cases = Get-ProviderConfigs
   }
 
   Context 'Core caching semantics' {
