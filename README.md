@@ -1,6 +1,11 @@
 # ExpressionCache
 
 <p align="center">
+  <img src="https://raw.githubusercontent.com/gmcnickle/ExpressionCache/main/assets/ExpressionCache-Typographic-logo-white.svg" alt="ExpressionCache Logo" width="400"/>
+</p>
+
+
+<p align="center">
   <a href="https://github.com/gmcnickle/ExpressionCache/actions/workflows/tests.yml">
     <img alt="CI" src="https://github.com/gmcnickle/ExpressionCache/actions/workflows/tests.yml/badge.svg">
   </a>
