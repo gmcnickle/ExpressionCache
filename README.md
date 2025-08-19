@@ -6,9 +6,6 @@
 
 
 <p align="center">
-  <a href="https://github.com/gmcnickle/ExpressionCache/actions/workflows/pester.yml">
-    <img alt="CI — Pester" src="https://github.com/gmcnickle/ExpressionCache/actions/workflows/pester.yml/badge.svg?branch=main">
-  </a>
   <a href="LICENSE">
     <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg">
   </a>
@@ -17,6 +14,18 @@
   </a>
   <a href="https://www.powershellgallery.com/packages/ExpressionCache">
     <img alt="PSGallery Downloads" src="https://img.shields.io/powershellgallery/dt/ExpressionCache">
+  </a>
+</p>
+<p align="center">
+  <!-- PowerShell 7 badge -->
+  <a href="https://github.com/gmcnickle/ExpressionCache/actions/workflows/pester-pwsh.yml">
+    <img alt="PowerShell 7 Tests"
+        src="https://github.com/gmcnickle/ExpressionCache/actions/workflows/pester-pwsh.yml/badge.svg?branch=main">
+  </a>
+  <!-- Windows PowerShell 5.1 badge -->
+  <a href="https://github.com/gmcnickle/ExpressionCache/actions/workflows/pester-ps51.yml">
+    <img alt="PowerShell 5.1 Tests"
+        src="https://github.com/gmcnickle/ExpressionCache/actions/workflows/pester-ps51.yml/badge.svg?branch=main">
   </a>
 </p>
 

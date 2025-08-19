@@ -1,4 +1,4 @@
-name: CI — Pester (PowerShell 7)
+name: PowerShell 7 Tests
 on:
   push:
     branches: [ main ]

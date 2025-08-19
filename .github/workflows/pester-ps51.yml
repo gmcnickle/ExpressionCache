@@ -1,4 +1,4 @@
-name: CI — Pester (Windows PowerShell 5.1)
+name: PowerShell 5.1 Tests
 on:
   push:
     branches: [ main ]
