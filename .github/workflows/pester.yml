@@ -19,11 +19,24 @@ permissions:
 
 jobs:
   test-windows:
-    name: Windows • Lint + Pester
+    name: Windows • Lint + Pester (${{ matrix.label }})
     runs-on: windows-2022
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shell: pwsh
+            label: 'PowerShell 7'
+            modules_dir: 'PowerShell'
+          - shell: powershell
+            label: 'Windows PowerShell 5.1'
+            modules_dir: 'WindowsPowerShell'
+
     defaults:
       run:
-        shell: pwsh
+        shell: ${{ matrix.shell }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,10 +44,10 @@ jobs:
       - name: Cache PowerShell modules
         uses: actions/cache@v4
         with:
-          path: ~\Documents\PowerShell\Modules
-          key: pwsh-mods-${{ runner.os }}-pester-5.7.1-pssa-1.22.0
+          path: ~\Documents\${{ matrix.modules_dir }}\Modules
+          key: pwsh-mods-${{ runner.os }}-${{ matrix.shell }}-pester-5.7.1-pssa-1.22.0
           restore-keys: |
-            pwsh-mods-${{ runner.os }}-
+            pwsh-mods-${{ runner.os }}-${{ matrix.shell }}-
 
       - name: Lint (PSScriptAnalyzer)
         run: |
@@ -59,24 +72,24 @@ jobs:
           $config.Run.Exit = $true
           $config.TestResult.Enabled = $true
           $config.TestResult.OutputFormat = 'JUnitXml'
-          $config.TestResult.OutputPath = 'test-results/pester-junit.xml'
+          $config.TestResult.OutputPath = "test-results/pester-${{ matrix.shell }}.xml"
           Invoke-Pester -Configuration $config
 
-      - name: Upload raw test results
+      - name: Upload raw test results (${{ matrix.label }})
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Pester-Results
-          path: test-results/pester-junit.xml
+          name: Pester-Results-${{ matrix.shell }}
+          path: test-results/pester-${{ matrix.shell }}.xml
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish test report
+      - name: Publish test report (${{ matrix.label }})
         if: always()
         uses: dorny/test-reporter@v2
         with:
-          name: Pester (Windows)
-          path: test-results/pester-junit.xml
+          name: Pester (${{ matrix.label }})
+          path: test-results/pester-${{ matrix.shell }}.xml
           reporter: java-junit
           fail-on-empty: true
           fail-on-error: false
