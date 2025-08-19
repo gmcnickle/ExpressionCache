@@ -6,8 +6,8 @@
 
 
 <p align="center">
-  <a href="https://github.com/gmcnickle/ExpressionCache/actions/workflows/tests.yml">
-    <img alt="CI" src="https://github.com/gmcnickle/ExpressionCache/actions/workflows/tests.yml/badge.svg">
+  <a href="https://github.com/gmcnickle/ExpressionCache/actions/workflows/pester.yml">
+    <img alt="CI — Pester" src="https://github.com/gmcnickle/ExpressionCache/actions/workflows/pester.yml/badge.svg?branch=main">
   </a>
   <a href="LICENSE">
     <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg">
