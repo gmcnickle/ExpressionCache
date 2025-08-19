@@ -93,37 +93,28 @@ Describe 'ExpressionCache :: Providers' {
     return $testCases
   }
 
-
-  BeforeAll {
-    $here = $PSScriptRoot
-    $repoRoot = (Resolve-Path "$here\..").Path
+  function script:Add-Common {
+    $here = $PSScriptRoot                                   
+    $repoRoot = (Resolve-Path (Join-Path $here '..')).Path  
     $psd1Path = Join-Path $repoRoot 'src/ExpressionCache.psd1'
-    $support = Join-Path $here 'support\common.ps1'
+    $support = Join-Path $here 'support/common.ps1'         
 
-    if (-not (Test-Path $psd1Path)) { throw "Cannot locate $psd1Path" }
-    if (-not (Test-Path $support)) { throw "Cannot locate $support" }
+    if (-not (Test-Path $psd1Path)) { throw "Cannot locate psd1 at: $psd1Path" }
+    if (-not (Test-Path $support)) { throw "Cannot locate support at: $support" }
 
     . $support -ModulePath $psd1Path
     Import-Module $psd1Path -Force
+  }
 
-    # Keep your current approach
+  BeforeAll {
+    Add-Common
+
     $script:Cases = Get-ProviderConfigs
   }
 
   BeforeDiscovery {
-    # Use file-relative paths (CI-safe)
-    $here = $PSScriptRoot
-    $repoRoot = (Resolve-Path "$here\..").Path
-    $psd1Path = Join-Path $repoRoot 'src/ExpressionCache.psd1'
-    $support = Join-Path $here 'support\common.ps1'
+    Add-Common
 
-    if (-not (Test-Path $psd1Path)) { throw "Cannot locate $psd1Path" }
-    if (-not (Test-Path $support)) { throw "Cannot locate $support" }
-
-    . $support -ModulePath $psd1Path
-    Import-Module $psd1Path -Force
-
-    # Now safe to call functions that use InModuleScope ExpressionCache
     $script:Cases = Get-ProviderConfigs
   }
 

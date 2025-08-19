@@ -9,15 +9,16 @@
 Describe 'Add-ExpressionCacheProvider' {
 
     BeforeAll {
+        $here = $PSScriptRoot                                   
+        $repoRoot = (Resolve-Path (Join-Path $here '..')).Path  
+        $psd1Path = Join-Path $repoRoot 'src/ExpressionCache.psd1'
+        $support = Join-Path $here 'support/common.ps1'         
 
-        $cwd = (Get-Location).Path
-        $psd1Path = Join-Path $cwd "src/ExpressionCache.psd1"
-        if (-not $psd1Path) { throw "Cannot locate 'src/ExpressionCache.psd1' starting from $(Get-Location)." }
+        if (-not (Test-Path $psd1Path)) { throw "Cannot locate psd1 at: $psd1Path" }
+        if (-not (Test-Path $support)) { throw "Cannot locate support at: $support" }
 
-        $SupportPath = Join-Path $cwd "tests/support/common.ps1"
-
-        if (-not $SupportPath) { throw "Cannot locate '$SupportPath'" }
-        (. $SupportPath -ModulePath $psd1Path) 
+        . $support -ModulePath $psd1Path
+        Import-Module $psd1Path -Force
 
         Ensure-ExpressionCacheInitialized
     }

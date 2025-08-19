@@ -3,15 +3,16 @@
 Describe 'ExpressionCache :: Set-ECProperty' {
 
   BeforeAll {
-    $cwd = (Get-Location).Path
+    $here = $PSScriptRoot                                   
+    $repoRoot = (Resolve-Path (Join-Path $here '..')).Path  
+    $psd1Path = Join-Path $repoRoot 'src/ExpressionCache.psd1'
+    $support = Join-Path $here 'support/common.ps1'         
 
-    $psd1Path   = Join-Path $cwd 'src/ExpressionCache.psd1'
-    if (-not (Test-Path $psd1Path)) { throw "Cannot locate $psd1Path" }
+    if (-not (Test-Path $psd1Path)) { throw "Cannot locate psd1 at: $psd1Path" }
+    if (-not (Test-Path $support)) { throw "Cannot locate support at: $support" }
+
+    . $support -ModulePath $psd1Path
     Import-Module $psd1Path -Force
-
-    $supportPath = Join-Path $cwd 'tests/support/common.ps1'
-    if (-not (Test-Path $supportPath)) { throw "Cannot locate $supportPath" }
-    . $supportPath -ModulePath $psd1Path
 
     Ensure-ExpressionCacheInitialized
   }
