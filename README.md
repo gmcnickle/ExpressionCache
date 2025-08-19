@@ -287,11 +287,11 @@ function Get-LocalFileSystem-CachedValue {
         [Alias('ArgumentList')][object[]]   $Arguments,
 
         [Parameter(Mandatory)][string]      $CacheFolder,
-        [Parameter(Mandatory)][datetime]    $MaximumAge,
+        [Parameter(Mandatory)][CachePolicy] $Policy,
         [Parameter(Mandatory)][string]      $CacheVersion
     )
 
-    $response = Get-FromLocalFileSystem -Key $Key -CacheFolder $CacheFolder -MaximumAge $MaximumAge -CacheVersion $CacheVersion
+    $response = Get-FromLocalFileSystem -Key $Key -CacheFolder $CacheFolder -CacheVersion $CacheVersion -Policy $Policy
 
     if ($null -eq $response) {
         $Arguments = if ($Arguments) { $Arguments } else { @() }
@@ -544,19 +544,6 @@ Potential extensions:
 - Cloud-backed (S3, Azure Blob, etc.)
 - Database-backed (SQL, SQLite, …)
 
-## Licensing
-
-- **Code**: MIT License (see [LICENSE](LICENSE.md)).  
-- **Docs & Non-code**: CC BY 4.0 (see [LICENSE-CC-BY.md](LICENSE-CC-BY.md)).  
-- **Contributions**: Code under MIT, docs under CC BY 4.0.
-
-## Credits
-
-**Primary Author:** Gary McNickle ([gmcnickle@outlook.com](mailto:gmcnickle@outlook.com))  
-**Co-Author & Assistant:** ChatGPT (OpenAI)  
-
-This script was collaboratively designed and developed through interactive sessions with ChatGPT, combining human experience and AI-driven support to solve real-world development challenges.
-
 ## Community & Show and Tell
 
 We’d love to see how you’re using ExpressionCache in your own projects!  
@@ -582,6 +569,21 @@ Contributions are welcome! Whether it’s a bug fix, a new provider, or an idea 
 
 Please follow the existing coding style and structure (functions in src/, tests in tests/).
 For larger features, consider opening a Discussion first to align on direction.
+
+## Licensing
+
+- **Code**: All source code files (e.g., .ps1, .py) in this repository are licensed under the [MIT License](LICENSE.md). If you use these scripts, a shout-out to [Gary McNickle](https://github.com/gmcnickle) and this repository is appreciated but not required.
+- **Non-Code Content**: All documentation, images, and written content (e.g., .md, .jpg, .txt) are licensed under the [Creative Commons Attribution 4.0 International Public License](LICENSE-CC-BY.md). Please attribute as: "© Gary McNickle 2025, licensed under CC BY 4.0 International" with a link to [https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/).
+- **Other Files**: Any files not explicitly categorized (e.g., .json, .yml) are licensed under CC BY 4.0 unless otherwise noted.
+- **Contributions**: By contributing to this repository, you agree to license your code under the MIT License and non-code contributions under CC BY 4.0.
+
+## Credits
+
+**Primary Author:** Gary McNickle ([gmcnickle@outlook.com](mailto:gmcnickle@outlook.com))  
+**Co-Author & Assistant:** ChatGPT (OpenAI)  
+
+This script was collaboratively designed and developed through interactive sessions with ChatGPT, combining human experience and AI-driven support to solve real-world development challenges.
+
 
 <p align="center">
   <a href="https://github.com/gmcnickle">
