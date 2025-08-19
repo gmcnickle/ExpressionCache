@@ -10,7 +10,7 @@ Describe 'ExpressionCache :: Providers' {
     )
 
     if (-not $Provider) {
-      Write-Verbose "Reset: provider '$name' not registered."
+      Write-Verbose "Reset: provider '$($Provider.name)' not registered."
       return
     }
 
@@ -31,12 +31,12 @@ Describe 'ExpressionCache :: Providers' {
   function script:Get-TestPrefix {
     $result = @{}
 
-    InModuleScope ExpressionCache -Parameters @{Data = $result} {
+    InModuleScope ExpressionCache -Parameters @{Data = $result } {
       if ($null -eq $script:get_expression_cache_tests_prefix) {
         $script:get_expression_cache_tests_prefix = 'test:' + [guid]::NewGuid().ToString('N') + ':'
-
-        $Data["prefix"] = $script:get_expression_cache_tests_prefix
       }
+
+      $Data["prefix"] = $script:get_expression_cache_tests_prefix
     }
 
     return $result["prefix"]
@@ -48,75 +48,82 @@ Describe 'ExpressionCache :: Providers' {
   }
 
   function script:Get-ProviderConfigs {
-    $testPrefix = Get-TestPrefix 
+    param([switch]$Discovery)
 
-    # Always include LocalFileSystemCache
+    $testPrefix = Get-TestPrefix
+
     $providerConfigs = @(
       @{ Key = 'LocalFileSystemCache'; Config = @{ Prefix = $testPrefix } }
     )
 
-    # Decide if Redis is eligible on this environment
     $enableRedis = Get-RedisEnabled
-
     if ($enableRedis) {
       $providerConfigs += @{ Key = 'Redis'; Config = @{ Database = 15; Prefix = $testPrefix } }
     }
 
-    # Initialize providers that are actually enabled
-    $providers = Initialize-ExpressionCache -AppName 'TestApp' -Providers $providerConfigs
-
-    # Build test cases: real LocalFS + real Redis (if enabled) + a "skipped" Redis case when not enabled
-    $testCases = @()
-
-    # Local FS (always present)
-    $fs = $providers | Where-Object Name -eq 'LocalFileSystemCache'
-    if ($fs) {
-      $testCases += @{
-        Provider     = $fs
-        ProviderName = $fs.Name
-        SkipReason   = $null
-      }
+    # Only initialize providers in RUN phase
+    $providers = if ($Discovery) { $null } else {
+      Initialize-ExpressionCache -AppName 'TestApp' -Providers $providerConfigs
     }
 
-    # Redis
-    if ($enableRedis) {
-      $rd = $providers | Where-Object Name -eq 'Redis'
-      if ($rd) {
-        $testCases += @{
-          Provider     = $rd
-          ProviderName = $rd.Name
-          SkipReason   = $null
-        }
+    $testCases = @()
+
+    if ($Discovery) {
+      $testCases += @{ ProviderName = 'LocalFileSystemCache'; SkipReason = $null }
+      if ($enableRedis) {
+        $testCases += @{ ProviderName = 'Redis'; SkipReason = $null }
+      }
+      else {
+        $testCases += @{ ProviderName = 'Redis'; SkipReason = 'Redis tests disabled on this environment (non-Linux or missing credentials).' }
       }
     }
     else {
-      # Include a skipped Redis case so each It{} stays uniform across providers
-      $testCases += @{
-        Provider     = $null
-        ProviderName = 'Redis'
-        SkipReason   = 'Redis tests disabled on this environment (non-Linux or missing credentials).'
+      $fs = $providers | Where-Object Name -eq 'LocalFileSystemCache'
+      if ($fs) { $testCases += @{ Provider = $fs; ProviderName = $fs.Name; SkipReason = $null } }
+
+      if ($enableRedis) {
+        $rd = $providers | Where-Object Name -eq 'Redis'
+        if ($rd) { $testCases += @{ Provider = $rd; ProviderName = $rd.Name; SkipReason = $null } }
       }
-    }    
+      else {
+        $testCases += @{ Provider = $null; ProviderName = 'Redis'; SkipReason = 'Redis tests disabled on this environment (non-Linux or missing credentials).' }
+      }
+    }
 
     return $testCases
   }
 
-  BeforeAll {
-    $cwd = (Get-Location).Path
 
-    $psd1Path = Join-Path $cwd 'src/ExpressionCache.psd1'
+  BeforeAll {
+    $here = $PSScriptRoot
+    $repoRoot = (Resolve-Path "$here\..").Path
+    $psd1Path = Join-Path $repoRoot 'src/ExpressionCache.psd1'
+    $support = Join-Path $here 'support\common.ps1'
+
     if (-not (Test-Path $psd1Path)) { throw "Cannot locate $psd1Path" }
+    if (-not (Test-Path $support)) { throw "Cannot locate $support" }
+
+    . $support -ModulePath $psd1Path
     Import-Module $psd1Path -Force
 
-    $SupportPath = Join-Path $cwd 'tests/support/common.ps1'
-    if (-not (Test-Path $SupportPath)) { throw "Cannot locate $SupportPath" }
-    . $SupportPath -ModulePath $psd1Path
-
-    # I hate the duplication here, but until I get this figured out, this will have to do...
+    # Keep your current approach
     $script:Cases = Get-ProviderConfigs
   }
 
   BeforeDiscovery {
+    # Use file-relative paths (CI-safe)
+    $here = $PSScriptRoot
+    $repoRoot = (Resolve-Path "$here\..").Path
+    $psd1Path = Join-Path $repoRoot 'src/ExpressionCache.psd1'
+    $support = Join-Path $here 'support\common.ps1'
+
+    if (-not (Test-Path $psd1Path)) { throw "Cannot locate $psd1Path" }
+    if (-not (Test-Path $support)) { throw "Cannot locate $support" }
+
+    . $support -ModulePath $psd1Path
+    Import-Module $psd1Path -Force
+
+    # Now safe to call functions that use InModuleScope ExpressionCache
     $script:Cases = Get-ProviderConfigs
   }
 
