@@ -1,0 +1,13 @@
+name: CI — Pester (Windows PowerShell 5.1)
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  run:
+    uses: ./.github/workflows/pester-reusable.yml
+    with:
+      shell: powershell

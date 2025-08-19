@@ -1,0 +1,76 @@
+name: Pester Reusable
+on:
+  workflow_call:
+    inputs:
+      shell:
+        required: true
+        type: string  # "pwsh" or "powershell"
+    secrets: {}
+jobs:
+  test:
+    name: Windows • Lint + Pester (${{ inputs.shell }})
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: ${{ inputs.shell }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: ~\Documents\${{ inputs.shell == 'powershell' && 'WindowsPowerShell' || 'PowerShell' }}\Modules
+          key: pwsh-mods-${{ runner.os }}-${{ inputs.shell }}-pester-5.7.1-pssa-1.22.0
+          restore-keys: |
+            pwsh-mods-${{ runner.os }}-${{ inputs.shell }}-
+
+      - name: Lint (PSScriptAnalyzer)
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $settings = '.pssa/PSScriptAnalyzerSettings.psd1'
+          $findings = Invoke-ScriptAnalyzer -Path . -Settings $settings -Recurse -Severity Error
+          $findings
+          if ($findings | Where-Object Severity -eq 'Error') { throw "PSScriptAnalyzer errors detected." }
+
+      - name: Install Pester 5.x
+        run: |
+          $params = @{
+            Name           = 'Pester'
+            MinimumVersion = '5.7.1'
+            Scope          = 'CurrentUser'
+            Force          = $true
+          }
+          if ($PSVersionTable.PSEdition -eq 'Desktop') { $params.SkipPublisherCheck = $true }
+          Install-Module @params
+          Import-Module Pester -MinimumVersion 5.7.1
+
+      - name: Run Pester (JUnit XML)
+        run: |
+          New-Item -ItemType Directory -Force -Path 'test-results' | Out-Null
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'tests'
+          $config.Run.PassThru = $true
+          $config.Run.Exit = $true
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputFormat = 'JUnitXml'
+          $config.TestResult.OutputPath = "test-results/pester-${{ inputs.shell }}.xml"
+          Invoke-Pester -Configuration $config
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Pester-Results-${{ inputs.shell }}
+          path: test-results/pester-${{ inputs.shell }}.xml
+          if-no-files-found: error
+          retention-days: 30
+
+      - uses: dorny/test-reporter@v2
+        if: always()
+        with:
+          name: Pester (${{ inputs.shell == 'powershell' && 'Windows PowerShell 5.1' || 'PowerShell 7' }})
+          path: test-results/pester-${{ inputs.shell }}.xml
+          reporter: java-junit
+          fail-on-empty: true
+          fail-on-error: false
+
+          
