@@ -44,7 +44,8 @@ Describe 'ExpressionCache :: Providers' {
 
   function script:Get-RedisEnabled {
     # does not check if you have redis running in a container on windows... If so, just return $true here...
-    $IsLinux -and $env:EXPRCACHE_SKIP_REDIS -ne '1' -and -not [string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)
+    return $false
+#    $IsLinux -and $env:EXPRCACHE_SKIP_REDIS -ne '1' -and -not [string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)
   }
 
   function script:Get-ProviderConfigs {

@@ -101,7 +101,6 @@ function Initialize-Redis-Cache {
         return
     }
 
-    $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
     $state = $provider.State
     if (-not $state) {
         $state = [PSCustomObject]@{
