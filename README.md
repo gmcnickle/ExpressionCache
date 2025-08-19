@@ -1,9 +1,9 @@
 # ExpressionCache
 
 <p align="center">
-  <!-- <a href="https://github.com/gmcnickle/ExpressionCache/actions/workflows/tests.yml">
+  <a href="https://github.com/gmcnickle/ExpressionCache/actions/workflows/tests.yml">
     <img alt="CI" src="https://github.com/gmcnickle/ExpressionCache/actions/workflows/tests.yml/badge.svg">
-  </a> -->
+  </a>
   <a href="LICENSE">
     <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg">
   </a>
@@ -13,7 +13,6 @@
   <a href="https://www.powershellgallery.com/packages/ExpressionCache">
     <img alt="PSGallery Downloads" src="https://img.shields.io/powershellgallery/dt/ExpressionCache">
   </a>
-  <!-- Optional: Code coverage (if you add Codecov) -->
   <!-- <a href="https://codecov.io/gh/gmcnickle/ExpressionCache">
     <img alt="Coverage" src="https://codecov.io/gh/gmcnickle/ExpressionCache/branch/main/graph/badge.svg">
   </a> -->
@@ -21,8 +20,6 @@
 
 
 Lightweight, pluggable caching for PowerShell *expressions* (scriptblocks). You provide a `{ ... }` to run (plus optional args); a storage *provider* handles lookup, freshness, and persistence.
-
----
 
 ## Install (local dev)
 
@@ -32,8 +29,6 @@ Import-Module "$PSScriptRoot/ExpressionCache.psd1" -Force
 ```
 
 > Requires PowerShell 5.1+ (works great on 7.x). Pester is only needed to run tests.
-
----
 
 ## Quick start
 
@@ -46,8 +41,6 @@ $result  # -> 3
 ```
 
 Prefer parameters over ambient variables inside your scriptblock. If you must capture outer vars, pass a closure: `{ Get-Content $file }.GetNewClosure()`.
-
----
 
 ## Public API
 
@@ -96,15 +89,11 @@ $key = 'users/42'
 Get-ExpressionCache -Key $key -ScriptBlock { param($id,$state) Get-User $id } -Arguments 42, $state
 ```
 
----
-
 ## File-system provider notes
 
 - Supports `-WhatIf/-Confirm` for state-changing operations (create dir, write file, expire stale cache).
 - Cache entries include `{ Version, Query, Data }` where `Version` is `Config.CacheVersion`.
 - Expiry is based on `Config.MaximumAge` (timestamp comparison).
-
----
 
 ## Tests
 
@@ -115,7 +104,6 @@ pwsh ./tests/run-tests.ps1
 
 The suite covers cache misses/hits, expiry, version invalidation, lazy init, error paths, and key stability. Tests use `TestDrive:` to isolate the on-disk cache.
 
----
 
 ## Project layout
 
@@ -131,8 +119,6 @@ tests/
   run-tests.ps1
 ```
 
----
-
 ## Design highlights
 
 - **Single source of truth:** provider settings live in `Config`.
@@ -140,22 +126,26 @@ tests/
 - **Safety:** avoids `Invoke-Expression`; favors parameters over ambient variables.
 - **Extensible:** add providers (Redis, S3, memory) by implementing `GetOrCreate` (and optional `Initialize`).
 
----
+### Licensing
 
-## License
+- **Code**: All source code files (e.g., .ps1, .py) in this repository are licensed under the [MIT License](LICENSE.md). If you use these scripts, a shout-out to [Gary McNickle](https://github.com/gmcnickle) and this repository is appreciated but not required.
+- **Non-Code Content**: All documentation, images, and written content (e.g., .md, .jpg, .txt) are licensed under the [Creative Commons Attribution 4.0 International Public License](LICENSE-CC-BY.md). Please attribute as: "© Gary McNickle 2025, licensed under CC BY 4.0 International" with a link to [https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/).
+- **Other Files**: Any files not explicitly categorized (e.g., .json, .yml) are licensed under CC BY 4.0 unless otherwise noted.
+- **Contributions**: By contributing to this repository, you agree to license your code under the MIT License and non-code contributions under CC BY 4.0.
 
-This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
----
-
-## ✒️ Attribution
+### Credits
 
 **Primary Author:** Gary McNickle ([gmcnickle@outlook.com](mailto:gmcnickle@outlook.com))  
 **Co-Author & Assistant:** ChatGPT (OpenAI)
 
 This script was collaboratively designed and developed through interactive sessions with ChatGPT, combining human experience and AI-driven support to solve real-world development challenges.
 
----
+### Special Thanks
+
+I want to give a shout-out to [OpenAI](https://openai.com/) and [ChatGPT](https://openai.com/chatgpt/overview/), who have made this project fun and collaborative.  Thanks for all that you do!
+
+
 
 ## 🌐 Connect
 

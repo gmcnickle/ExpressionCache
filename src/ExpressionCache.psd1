@@ -18,7 +18,7 @@
             LicenseUri   = 'https://opensource.org/license/mit/' 
             ProjectUri   = 'https://github.com/gmcnickle/ExpressionCache'
             Tags         = @('caching', 'powershell', 'scriptblock')
-            ReleaseNotes = ''
+            ReleaseNotes = 'Initial Pre-Release'
         }
     }
 }

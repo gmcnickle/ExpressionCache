@@ -1,0 +1,8 @@
+# GitHub Funding configuration
+
+# Enable the "Sponsor" button on the repo with links to donation options.
+# You can add more platforms later (Patreon, Ko-fi, etc.)
+
+github: gmcnickle
+custom:
+  - "https://www.paypal.com/donate/?business=6YAHAAL6TN2Z8&no_recurring=0&item_name=I%E2%80%99m+grateful+you%E2%80%99ve+found+value+in+my+work%E2%80%94your+support+helps+me+continue+creating+for+the+community.&currency_code=USD"
