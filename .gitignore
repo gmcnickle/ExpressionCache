@@ -4,6 +4,7 @@
 dist/
 bin/
 obj/
+Staging/
 
 # VS Code / IDE
 .vscode/
