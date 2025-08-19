@@ -1,0 +1,62 @@
+# .github/workflows/pester-linux.yml
+name: Powershell 7 Tests - Linux
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-ubuntu:
+    runs-on: ubuntu-latest
+    env:
+      EXPRCACHE_SKIP_REDIS: '1'  # keep Redis skipped for now
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache PowerShell modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/powershell/Modules
+          key: pwsh-mods-linux-pester-5.7.1-pssa-1.22.0
+
+      - name: Install tools
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          Install-Module Pester -MinimumVersion 5.7.1 -Scope CurrentUser -Force
+          Import-Module Pester -MinimumVersion 5.7.1
+
+      - name: Run Pester (JUnit XML)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path 'test-results' | Out-Null
+          $cfg = New-PesterConfiguration
+          $cfg.Run.Path = 'tests'
+          $cfg.Run.PassThru = $true
+          $cfg.Run.Exit = $true
+          $cfg.TestResult.Enabled = $true
+          $cfg.TestResult.OutputFormat = 'JUnitXml'
+          $cfg.TestResult.OutputPath = 'test-results/pester-linux.xml'
+          Invoke-Pester -Configuration $cfg
+
+      - name: Upload raw test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pester-Results-linux
+          path: test-results/pester-linux.xml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish test report
+        if: always()
+        uses: dorny/test-reporter@v2
+        with:
+          name: Pester (Linux / PowerShell 7)
+          path: test-results/pester-linux.xml
+          reporter: java-junit
+          fail-on-empty: true
+          fail-on-error: false

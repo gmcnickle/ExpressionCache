@@ -27,6 +27,10 @@
     <img alt="PowerShell 5.1 Tests"
         src="https://github.com/gmcnickle/ExpressionCache/actions/workflows/pester-ps51.yml/badge.svg?branch=main">
   </a>
+  <a href="https://github.com/gmcnickle/ExpressionCache/actions/workflows/pester-linux.yml">
+    <img alt="Linux Tests (PowerShell 7)"
+        src="https://github.com/gmcnickle/ExpressionCache/actions/workflows/pester-linux.yml/badge.svg?branch=main">
+  </a>  
 </p>
 
 Lightweight, pluggable caching for PowerShell *expressions* (scriptblocks).  
