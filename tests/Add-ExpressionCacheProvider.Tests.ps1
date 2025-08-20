@@ -12,7 +12,7 @@ Describe 'Add-ExpressionCacheProvider' {
         $here = $PSScriptRoot                                   
         $repoRoot = (Resolve-Path (Join-Path $here '..')).Path  
         $psd1Path = Join-Path $repoRoot 'src/ExpressionCache.psd1'
-        $support = Join-Path $here 'Support/Common.ps1'         
+        $support = Join-Path $here 'support/Common.ps1'         
 
         if (-not (Test-Path $psd1Path)) { throw "Cannot locate psd1 at: $psd1Path" }
         if (-not (Test-Path $support)) { throw "Cannot locate support at: $support" }
