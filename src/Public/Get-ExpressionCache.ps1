@@ -26,7 +26,7 @@ The computation to run on a cache miss. Invoked with the supplied -Arguments.
 Arguments passed positionally to the ScriptBlock.
 
 .PARAMETER ProviderName
-Provider to use (e.g., 'LocalFileSystemCache', 'Redis').
+Provider to use (e.g., 'LocalFileSystemCache', 'Redis').  Defaults to $env:EXPRCACHE_DEFAULT_PROVIDER, or if thats empty, 'LocalFileSystem'.
 
 .PARAMETER MaxAge
 A TimeSpan; cached values older than this are treated as stale and recomputed.
@@ -100,7 +100,7 @@ about_CommonParameters
 function Get-ExpressionCache {
   [CmdletBinding(DefaultParameterSetName = 'ByMaxAge')]
   param(
-    [string]$ProviderName = 'LocalFileSystemCache',
+    [string]$ProviderName,
 
     [Parameter(Mandatory)]
     [scriptblock]$ScriptBlock,
@@ -125,6 +125,14 @@ function Get-ExpressionCache {
   begin {
     if (-not $script:RegisteredStorageProviders) {
       throw "Module not initialized. Call Initialize-ExpressionCache first."
+    }
+
+    if (-not $ProviderName) {
+        $ProviderName = $env:EXPRCACHE_DEFAULT_PROVIDER
+
+        if (-not $ProviderName) { 
+          $ProviderName = 'LocalFileSystemCache' 
+        }
     }
 
     $strategy = $script:RegisteredStorageProviders |
