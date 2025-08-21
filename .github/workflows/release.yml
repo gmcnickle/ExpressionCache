@@ -84,7 +84,7 @@ jobs:
           }
 
           $lines = Get-Content CHANGELOG.md
-          $match = $lines | Select-String -Pattern $pattern -SimpleMatch:$false | Select-Object -First 1
+          $match = $lines | Select-String -Pattern $pattern | Select-Object -First 1
           if (-not $match) {
             Write-Host "No changelog section found for $ver; using fallback."
             "body=" + "Automated release $ver." | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -93,7 +93,7 @@ jobs:
 
           $startIndex = $match.LineNumber - 1
           $rest = $lines[$startIndex..($lines.Length-1)]
-          $nextHeader = ($rest | Select-String -Pattern '^##\s+' -SimpleMatch | Select-Object -Skip 1 -First 1)
+          $nextHeader = ($rest | Select-String -Pattern '^##\s+' | Select-Object -Skip 1 -First 1)
           if ($nextHeader) {
             $endIndex = $nextHeader.LineNumber - 2
             $section = $rest[0..$endIndex]
@@ -123,19 +123,20 @@ jobs:
       - name: Publish to PowerShell Gallery
         env:
           PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+          MANUAL_NOTES: ${{ env.MANUAL_NOTES }}
+          CHANGELOG_BODY: ${{ steps.changelog.outputs.body }}
+          NEW_VERSION: ${{ steps.bump.outputs.newVersion }}
         shell: pwsh
         run: |
           if (-not $env:PSGALLERY_API_KEY) { throw "PSGALLERY_API_KEY secret is not set." }
 
           # Decide release notes priority: manual > changelog > fallback
-          if ("${{ env.MANUAL_NOTES }}") {
-            $notes = @'
-${{ env.MANUAL_NOTES }}
-'@
-          } elseif ("${{ steps.changelog.outputs.body }}") {
-            $notes = "${{ steps.changelog.outputs.body }}"
+          if ($env:MANUAL_NOTES) {
+            $notes = $env:MANUAL_NOTES
+          } elseif ($env:CHANGELOG_BODY) {
+            $notes = $env:CHANGELOG_BODY
           } else {
-            $notes = "Automated release ${{ steps.bump.outputs.newVersion }}."
+            $notes = "Automated release $env:NEW_VERSION."
           }
 
           # Ensure PowerShellGet is available
