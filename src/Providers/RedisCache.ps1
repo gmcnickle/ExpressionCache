@@ -103,7 +103,8 @@ function Initialize-Redis-Cache {
         [int]$Port = 6379,
         [int]$Database = 2,
         [string]$Prefix = 'ExpressionCache:v1',
-        [string]$Password = ""
+        [string]$Password = "",
+        [bool]$DeferClientCreation = $true
     )
 
     $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
@@ -124,26 +125,82 @@ function Initialize-Redis-Cache {
     }
     $null = $provider | Set-ECProperty -Name 'State' -Value $state -DontEnforceType
 
-    $client = New-RedisClient -Provider $provider -HostAddress $HostAddress -Port $Port -Database $Database -Password $Password -Prefix $Prefix
-    $provider.State.Client = $client
+    if (-not $DeferClientCreation) {
+        $client = New-RedisClient -Provider $provider -HostAddress $HostAddress -Port $Port -Database $Database -Password $Password -Prefix $Prefix
+        $provider.State.Client = $client
+    }
 }
 
 function Resolve-RedisClient {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$ProviderName
     )
 
     $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
-    if (-not $provider) { throw "Provider '$ProviderName' not found." }
 
-    $client = $provider.State.Client
-
-    if (-not $client) {
-        throw "No client found for '$ProviderName'."
+    if (-not $provider) { 
+        throw "Provider '$ProviderName' not found." 
     }
 
-    return $client, $provider
+    $state  = $provider.State
+    $client = $state.Client
+    $config = $provider.Config
+
+    # Optional: global/env override to disable redis (useful in CI)
+    if ($env:EC_DISABLE_REDIS) { 
+        return $null, $provider 
+    }
+
+    if ($client) { 
+        return $client, $provider 
+    }
+
+    $defer  = ($config -and $config.ContainsKey('DeferClientCreation') -and [bool]$config['DeferClientCreation'])
+    $strict = ($config -and $config.ContainsKey('Strict')              -and [bool]$config['Strict'])
+
+    if (-not $defer) {
+        throw "No Redis client initialized for provider '$ProviderName'."
+    }
+
+    # Provider-scoped sync object to avoid double-create
+    if (-not $state.Sync) { 
+        $state | Set-ECProperty -Name 'Sync' -Value (New-Object object) -DontEnforceType 
+    }
+
+    lock ($state.Sync) {
+        if ($state.Client) { 
+            return $state.Client, $provider 
+        } # someone else won the race
+
+        if (-not $state.ClientCreationAttempted) {
+            $state | Set-ECProperty -Name 'ClientCreationAttempted' -Value $true -DontEnforceType
+
+            try {
+                $newClient = New-RedisClient `
+                    -Host     $config['Host'] `
+                    -Port     $config['Port'] `
+                    -Database $config['Database'] `
+                    -Prefix   $config['Prefix'] `
+                    -Password $config['Password']
+
+                $state | Set-ECProperty -Name 'Client'      -Value $newClient -DontEnforceType
+                $state | Set-ECProperty -Name 'Initialized' -Value $true      -DontEnforceType
+                $state | Set-ECProperty -Name 'LastError'   -Value $null      -DontEnforceType
+            }
+            catch {
+                $state | Set-ECProperty -Name 'LastError'   -Value $_         -DontEnforceType
+                $state | Set-ECProperty -Name 'Initialized' -Value $false     -DontEnforceType
+
+                if ($strict) { 
+                    throw 
+                }
+            }
+        }
+
+        return $state.Client, $provider
+    }
 }
 
 function Get-Redis-CachedValue {
@@ -217,7 +274,8 @@ function Clear-Redis-Cache {
 
             if ($resp[0] -is [array]) {
                 $nextCursor = [string]$resp[0][0]
-            } else {
+            }
+            else {
                 $nextCursor = [string]$resp[0]
             }
 
@@ -373,7 +431,8 @@ function Read-RedisLine {
     while ($true) {
         $b = $Stream.ReadByte()
         if ($b -eq -1) { throw "Unexpected EOF while reading line." }
-        if ($b -eq 13) {  # CR
+        if ($b -eq 13) {
+            # CR
             $lf = $Stream.ReadByte()
             if ($lf -ne 10) { throw "Protocol error: expected LF after CR." }
             break
@@ -408,7 +467,8 @@ function Read-RedisRESP {
             Write-RedisLog "Integer: :$val"
             return $val
         }
-        '$' {  # Bulk string
+        '$' {
+            # Bulk string
             $lenStr = Read-RedisLine -Stream $Stream
             $len = [int]$lenStr
             if ($len -lt 0) {

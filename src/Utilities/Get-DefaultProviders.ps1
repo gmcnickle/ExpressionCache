@@ -36,6 +36,7 @@ function Get-DefaultProviders {
                 Prefix        = "ExpressionCache:v$($Script:moduleData.ModuleVersion.Major):$($script:Config.AppName)"
                 Password      = if ($env:EXPRCACHE_REDIS_PASSWORD) { $env:EXPRCACHE_REDIS_PASSWORD } else { 'ChangeThisPassword!' }
                 DefaultMaxAge = (New-TimeSpan -Days 1)
+                DeferClientCreation = $true
             }
             GetOrCreate = 'Get-Redis-CachedValue'
             Initialize  = 'Initialize-Redis-Cache'

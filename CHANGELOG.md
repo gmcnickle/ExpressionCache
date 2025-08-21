@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - New sample: `InMemoryCache.Sample.ps1` showing custom provider registration and cache usage.
 - Support for `EXPRCACHE_DEFAULT_PROVIDER` environment override.
+- Defered client initialization during Redis provider init
 
 ### Fixed
 - Cache policy: bug where a 1-day default TTL resolved to 1 second.  
