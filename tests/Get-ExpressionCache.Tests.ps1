@@ -43,74 +43,85 @@ Describe 'ExpressionCache :: Providers' {
   }
 
   function script:Get-RedisEnabled {
-    # does not check if you have redis running in a container on windows... If so, just return $true here...
-    return $IsLinux -and $env:EXPRCACHE_SKIP_REDIS -ne '1' -and -not [string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)
+    # Enable only if: Linux runner AND not explicitly skipped AND password provided
+    if (-not $IsLinux) { return $false }
+    if ($env:EXPRCACHE_SKIP_REDIS -eq '1') { return $false }
+    if ([string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)) { return $false }
+    return $true
   }
 
-  function script:Get-ProviderConfigs {
-    param([switch]$Discovery)
+function script:Get-ProviderConfigs {
+  param([switch]$Discovery)
 
-    $testPrefix = Get-TestPrefix
+  $testPrefix   = Get-TestPrefix
+  $redisEnabled = Get-RedisEnabled
 
-    # Build list of provider descriptors (array)
-    $providerList = @(
-      @{ Name = 'LocalFileSystemCache'; Config = @{ Prefix = $testPrefix } }
+  # --- Build provider map (only add Redis if gate passes) ---
+  $providerList = @(
+    @{ Name = 'LocalFileSystemCache'; Config = @{ Prefix = $testPrefix } }
+  )
+  if ($redisEnabled) {
+    $providerList += @{ Name = 'Redis'; Config = @{ Database = 15; Prefix = $testPrefix } }
+  }
+
+  $providerMap = [ordered]@{}
+  foreach ($p in $providerList) { $providerMap[$p.Name] = $p }
+
+  # --- Initialize (unless discovery) ---
+  $providers = if ($Discovery) { $null } else {
+    Initialize-ExpressionCache -AppName 'TestApp' -Providers $providerMap
+  }
+
+  # Helper to build a single Redis test case with correct skip reason
+  function New-RedisTestCase {
+    param(
+      [hashtable]$Providers,
+      [bool]$RedisEnabled,
+      [switch]$DiscoveryMode
     )
+    $rd = $null
+    if ($Providers -and $Providers.Contains('Redis')) { $rd = $Providers['Redis'] }
 
-    if (Get-RedisEnabled) {
-      $providerList += @{ Name = 'Redis'; Config = @{ Database = 15; Prefix = $testPrefix } }
-    }
-
-    # Convert array to keyed [ordered] hashtable (expected by Initialize-ExpressionCache)
-    $providerMap = [ordered]@{}
-    foreach ($p in $providerList) {
-      $providerMap[$p.Name] = $p
-    }
-
-    # Initialize providers unless we're in discovery mode
-    $providers = if ($Discovery) { $null } else {
-      Initialize-ExpressionCache -AppName 'TestApp' -Providers $providerMap
-    }
-
-    $testCases = @()
-
-    if ($Discovery) {
-      # Add test cases with just ProviderName and SkipReason
-      $testCases += @{ ProviderName = 'LocalFileSystemCache'; SkipReason = $null }
-
-      if (Get-RedisEnabled) {
-        $testCases += @{ ProviderName = 'Redis'; SkipReason = $null }
+    $skip =
+      if (-not $RedisEnabled) {
+        'Redis tests disabled on this environment (non-Linux, SKIP_REDIS=1, or missing credentials).'
       }
-      else {
-        $testCases += @{
-          ProviderName = 'Redis'
-          SkipReason   = 'Redis tests disabled on this environment (non-Linux or missing credentials).'
-        }
+      elseif (-not $rd -and -not $DiscoveryMode) {
+        # Only complain about "not registered" when we actually initialized providers
+        'Redis provider not registered for this run.'
       }
-    }
-    else {
-      if ($providers -and $providers.Contains('LocalFileSystemCache')) {
-        $fs = $providers['LocalFileSystemCache']
-        $testCases += @{ Provider = $fs; ProviderName = $fs.Name; SkipReason = $null }
-      }
+      else { $null }
 
-      if (Get-RedisEnabled) {
-        if ($providers -and $providers.Contains('Redis')) {
-          $rd = $providers['Redis']
-          $testCases += @{ Provider = $rd; ProviderName = $rd.Name; SkipReason = $null }
-        }
-      }
-      else {
-        $testCases += @{
-          Provider     = $null
-          ProviderName = 'Redis'
-          SkipReason   = 'Redis tests disabled on this environment (non-Linux or missing credentials).'
-        }
-      }
+    if ($DiscoveryMode) {
+      return @{ ProviderName = 'Redis'; SkipReason = $skip }
+    } else {
+      return @{ Provider = $rd; ProviderName = 'Redis'; SkipReason = $skip }
     }
-
-    return $testCases
   }
+
+  $testCases = @()
+
+  if ($Discovery) {
+    # Local FS is always discoverable
+    $testCases += @{ ProviderName = 'LocalFileSystemCache'; SkipReason = $null }
+
+    # Exactly one Redis case (skip reason covers disabled)
+    $testCases += New-RedisTestCase -Providers $null -RedisEnabled:$redisEnabled -DiscoveryMode
+  }
+  else {
+    # Local FS (only add if actually registered)
+    if ($providers -and $providers.Contains('LocalFileSystemCache')) {
+      $fs = $providers['LocalFileSystemCache']
+      $testCases += @{ Provider = $fs; ProviderName = $fs.Name; SkipReason = $null }
+    }
+
+    # Exactly one Redis case; will be skipped if disabled or not registered
+    $testCases += New-RedisTestCase -Providers $providers -RedisEnabled:$redisEnabled
+  }
+
+  return $testCases
+}
+
 
 
   function script:Add-Common {
