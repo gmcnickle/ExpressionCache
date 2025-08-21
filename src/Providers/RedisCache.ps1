@@ -1,4 +1,4 @@
-# Providers/RedisCacheProvider.Light.ps1
+﻿# Providers/RedisCacheProvider.Light.ps1
 
 using namespace System.Net.Sockets
 using namespace System.Text
