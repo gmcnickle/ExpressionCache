@@ -1,7 +1,7 @@
 @{
     # Core
     RootModule        = 'ExpressionCache.psm1'
-    ModuleVersion     = '0.1.1'
+    ModuleVersion     = '0.1.2'
     GUID              = '4ebe238d-ac4f-4731-a0b3-73fe7d28f97d'
     Author            = 'Gary McNickle'
     CompanyName       = 'RogueCivilian'
@@ -21,7 +21,7 @@
             LicenseUri   = 'https://opensource.org/license/mit/' 
             ProjectUri   = 'https://github.com/gmcnickle/ExpressionCache'
             Tags         = @('caching', 'powershell', 'scriptblock')
-            ReleaseNotes = 'Initial Pre-Release'
+            ReleaseNotes = 'Added support for a default ProviderName argument when calling Get-ExpressionCache'
             Prerelease = 'beta1'
         }
     }

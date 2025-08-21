@@ -1,20 +1,21 @@
 function Build-SplatFromConfig {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$CommandName,
 
         [Parameter(Mandatory)]
-        [pscustomobject]$Config
+        [System.Collections.IDictionary]$Config
     )
 
-    $names = Get-ProviderSpecificParamNames -CommandName $CommandName
-    $splat = @{}
+    # Discover provider-specific (non-common) parameter names
+    $paramNames = Get-ProviderSpecificParamNames -CommandName $CommandName
 
-    foreach ($n in $names) {
-        if ($Config.PSObject.Properties.Name -contains $n) {
-            $splat[$n] = $Config.$n
+    $splat = @{}
+    foreach ($name in $paramNames) {
+        if ($Config.Contains($name)) {  
+            $splat[$name] = $Config[$name]
         }
     }
-    
-    $splat
+    return $splat
 }

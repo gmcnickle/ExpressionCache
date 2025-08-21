@@ -3,6 +3,21 @@
 using namespace System.Net.Sockets
 using namespace System.Text
 
+$Global:debugRedis = $true
+$Global:RedisDebugLog = "$env:LOCALAPPDATA\redis_debug.log"
+
+function Write-RedisLog {
+    param([string]$msg)
+
+    if (-not $Global:debugRedis) {
+        return
+    }
+    
+    $timestamp = (Get-Date).ToString("HH:mm:ss.fff")
+    Add-Content -Path $Global:RedisDebugLog -Value "$timestamp - $msg"
+}
+
+
 # -- Client constructor -------------------------------------------------------
 function New-RedisClient {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
@@ -14,10 +29,10 @@ function New-RedisClient {
         [string]$HostAddress,
 
         [Parameter(Mandatory)]
-        [ValidateRange(1,65535)]
+        [ValidateRange(1, 65535)]
         [int]$Port,
 
-        [ValidateRange(0,[int]::MaxValue)]
+        [ValidateRange(0, [int]::MaxValue)]
         [int]$Database = 0,
 
         [string]$Prefix = 'ExpressionCache:v1',
@@ -82,6 +97,8 @@ function Initialize-Redis-Cache {
     param(
         [Parameter(Mandatory)] 
         [string]$ProviderName,
+        [Parameter(Mandatory)]
+        [timespan]$DefaultMaxAge,
         [string]$HostAddress = '127.0.0.1',
         [int]$Port = 6379,
         [int]$Database = 2,
@@ -101,14 +118,10 @@ function Initialize-Redis-Cache {
         return
     }
 
-    $state = $provider.State
-    if (-not $state) {
-        $state = [PSCustomObject]@{
-            Client      = $null
-            Initialized = $true
-            SyncRoot    = [object]::new()
-        }
-    } 
+    $state = [PSCustomObject]@{
+        Client   = $null
+        SyncRoot = [object]::new()
+    }
     $null = $provider | Set-ECProperty -Name 'State' -Value $state -DontEnforceType
 
     $client = New-RedisClient -Provider $provider -HostAddress $HostAddress -Port $Port -Database $Database -Password $Password -Prefix $Prefix
@@ -143,40 +156,45 @@ function Get-Redis-CachedValue {
         [Parameter(Mandatory)][CachePolicy]$Policy
     )
 
-    $client, $provider = Resolve-RedisClient -ProviderName $ProviderName
-    $rkey = Join-RedisKey -Client $client -Key $Key
+    try {
+        Write-RedisLog "=== [ENTRY] Get-Redis-CachedValue ==="
+        $client, $provider = Resolve-RedisClient -ProviderName $ProviderName
+        $rkey = Join-RedisKey -Client $client -Key $Key
 
-    # READ
-    $raw = Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('GET', $rkey))
-    if ($null -ne $raw) {
-        # Sliding: refresh TTLs on hit
-        if ($Policy.Sliding) {
-            [void](Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('EXPIRE', $rkey, [string]$Policy.TtlSeconds)))
-            [void](Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('EXPIRE', "${rkey}:meta", [string]$Policy.TtlSeconds)))
+        $raw = Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('GET', $rkey))
+        # write-host "Redis GET $rkey"
+        if ($null -ne $raw) {
+            if ($Policy.Sliding) {
+                Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('EXPIRE', $rkey, [string]$Policy.TtlSeconds)) | Out-Null
+                Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('EXPIRE', "$rkey:meta", [string]$Policy.TtlSeconds)) | Out-Null
+            }
+            Write-RedisLog "[CACHE HIT] Key: $rkey"
+            return (Read-CacheValue $raw)
         }
-        return (Read-CacheValue $raw)
+
+        Write-RedisLog "[CACHE MISS] Key: $rkey — computing value"
+        if ($null -eq $Arguments) { $Arguments = @() }
+        $result = & $ScriptBlock @Arguments
+        if ($null -eq $result) { return $null }
+
+        $payload = Write-CacheValue -Value $result
+
+        Invoke-RedisRaw -Provider $provider -Context $client `
+            -Arguments ([object[]]@('SET', $rkey, $payload, 'EX', [string]$Policy.TtlSeconds)) | Out-Null
+
+        $desc = ($ScriptBlock.ToString() -split "`r?`n" | ForEach-Object { $_.Trim() }) -join ' '
+        Invoke-RedisRaw -Provider $provider -Context $client `
+            -Arguments ([object[]]@('HSET', "$rkey:meta", 'q', $desc, 'ts', (Get-Date).ToString('o'))) | Out-Null
+        Invoke-RedisRaw -Provider $provider -Context $client `
+            -Arguments ([object[]]@('EXPIRE', "$rkey:meta", [string]$Policy.TtlSeconds)) | Out-Null
+
+        Write-RedisLog "[CACHE STORE] Key: $rkey"
+        return $result
     }
-
-    # MISS → compute
-    if ($null -eq $Arguments) { $Arguments = @() }
-    $result = & $ScriptBlock @Arguments
-    if ($null -eq $result) { return $null }
-
-    $payload = Write-CacheValue -Value $result
-
-    # Write value with TTL
-    [void](Invoke-RedisRaw -Provider $provider -Context $client `
-            -Arguments ([object[]]@('SET', $rkey, $payload, 'EX', [string]$Policy.TtlSeconds)))
-
-    # optional metadata (query + timestamp)
-    $desc = ($ScriptBlock.ToString() -split "`r?`n" | ForEach-Object { $_.Trim() }) -join ' '
-    [void](Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('HSET', "${rkey}:meta", 'q', $desc, 'ts', (Get-Date).ToString('o'))))
-    [void](Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('EXPIRE', "${rkey}:meta", [string]$Policy.TtlSeconds)))
-
-    return $result
+    finally {
+        Write-RedisLog "=== [EXIT] Get-Redis-CachedValue ==="
+    }
 }
-
-
 
 function Clear-Redis-Cache {
     [CmdletBinding()]
@@ -185,27 +203,57 @@ function Clear-Redis-Cache {
         [switch]$Force
     )
 
-    $client, $provider = Resolve-RedisClient -ProviderName $ProviderName
-    $pattern = "$($client.Prefix)*"   # must match Join-RedisKey behavior
+    try {
+        Write-RedisLog "=== [ENTRY] Clear-Redis-Cache ==="
+        $client, $provider = Resolve-RedisClient -ProviderName $ProviderName
+        $pattern = "$($client.Prefix)*"
 
-    $cursor = '0'
-    do {
-        $resp = Invoke-RedisRaw -Provider $provider -Context $client `
-            -Arguments ([object[]]@('SCAN', $cursor, 'MATCH', $pattern, 'COUNT', '1000'))
-        $cursor = [string]$resp[0]
-        $keys = @($resp[1])
+        $cursor = '0'
+        $iterationLimit = 100
+        $iteration = 0
 
-        if ($keys.Count -gt 0) {
-            $batchSize = 1000
-            for ($i = 0; $i -lt $keys.Count; $i += $batchSize) {
-                $end = [Math]::Min($i + $batchSize - 1, $keys.Count - 1)
-                $chunk = $keys[$i..$end]
-                $cmd = @('UNLINK') + $chunk
-                [void](Invoke-RedisRaw -Provider $provider -Context $client -Arguments $cmd)
+        do {
+            $resp = Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('SCAN', $cursor, 'MATCH', $pattern, 'COUNT', '1000'))
+
+            if ($resp[0] -is [array]) {
+                $nextCursor = [string]$resp[0][0]
+            } else {
+                $nextCursor = [string]$resp[0]
             }
+
+            $keys = $resp[1]
+
+            if ($keys -isnot [array]) { $keys = @($keys) }
+            if ($keys.Count -eq 1 -and $keys[0] -is [array]) { $keys = $keys[0] }
+
+            $keys = $keys | Where-Object { $_ -ne '0' }
+            Write-RedisLog "[SCAN] Cursor=$cursor -> $nextCursor, KeysReturned=$($keys.Count)"
+
+            if ($keys.Count -gt 0) {
+                $chunk = $keys -join ', '
+                Write-RedisLog "[UNLINK] Keys: $chunk"
+                $cmd = @('UNLINK') + $keys
+                Invoke-RedisRaw -Provider $provider -Context $client -Arguments $cmd | Out-Null
+            }
+
+            if ($cursor -eq $nextCursor) {
+                Write-RedisLog "[WARN] Redis SCAN returned same cursor ($cursor), breaking."
+                break
+            }
+
+            $cursor = $nextCursor
+            $iteration++
+        } while ($cursor -ne '0' -and $iteration -lt $iterationLimit)
+
+        if ($iteration -ge $iterationLimit) {
+            Write-RedisLog "[ERROR] SCAN exceeded iteration limit ($iterationLimit)."
         }
-    } while ($cursor -ne '0')
+    }
+    finally {
+        Write-RedisLog "=== [EXIT] Clear-Redis-Cache ==="
+    }
 }
+
 
 
 # -- Helpers -----------------------------------------------------------------
@@ -234,18 +282,16 @@ function Invoke-RedisRaw {
         [Parameter(Mandatory)] $Provider
     )
 
-    if (-not $Arguments -or $Arguments.Count -eq 0) { 
-        throw "Invoke-RedisRaw: -Arguments empty." 
+    if (-not $Arguments -or $Arguments.Count -eq 0) {
+        throw "Invoke-RedisRaw: -Arguments empty."
     }
+
+    $cmdString = ($Arguments | ForEach-Object { "'$_'" }) -join ' '
+    Write-RedisLog "→ Redis CMD: $cmdString"
 
     $stream = $Context.Stream
-    if ($stream.ReadTimeout -eq 0) {
-        $stream.ReadTimeout = 10000 
-    }
-
-    if ($stream.WriteTimeout -eq 0) {
-        $stream.WriteTimeout = 10000 
-    }
+    if ($stream.ReadTimeout -eq 0) { $stream.ReadTimeout = 10000 }
+    if ($stream.WriteTimeout -eq 0) { $stream.WriteTimeout = 10000 }
 
     $lockObj = $Provider.State.SyncRoot
     [System.Threading.Monitor]::Enter($lockObj)
@@ -266,7 +312,9 @@ function Invoke-RedisRaw {
         }
         $stream.Flush()
 
-        return Read-RedisRESP -Stream $stream
+        $response = Read-RedisRESP -Stream $stream
+        Write-RedisLog "← Redis RESP: $($response | Out-String)"
+        return $response
     }
     finally {
         [System.Threading.Monitor]::Exit($lockObj)
@@ -319,68 +367,98 @@ function Read-Full {
 
 
 function Read-RedisLine {
-    param([Parameter(Mandatory)][System.IO.Stream]$Stream)
+    param([System.IO.Stream]$Stream)
 
-    # Optional: avoid hangs forever
-    if ($Stream.ReadTimeout -eq 0) { $Stream.ReadTimeout = 10000 }  # 10s
-
-    $ms = New-Object System.IO.MemoryStream
+    $bytes = New-Object System.Collections.Generic.List[byte]
     while ($true) {
         $b = $Stream.ReadByte()
-        if ($b -lt 0) { throw "Disconnected while reading line." }
-        if ($b -eq 13) {
-            # CR
+        if ($b -eq -1) { throw "Unexpected EOF while reading line." }
+        if ($b -eq 13) {  # CR
             $lf = $Stream.ReadByte()
-            if ($lf -ne 10) { throw "Protocol error: expected LF after CR, got $lf." }
+            if ($lf -ne 10) { throw "Protocol error: expected LF after CR." }
             break
         }
-        $ms.WriteByte([byte]$b)
+        $bytes.Add([byte]$b)
     }
-    return [Text.Encoding]::UTF8.GetString($ms.ToArray())
+    return [Text.Encoding]::UTF8.GetString($bytes.ToArray())
 }
 
 function Read-RedisRESP {
     param([Parameter(Mandatory)][System.IO.Stream]$Stream)
 
     $type = $Stream.ReadByte()
-    if ($type -lt 0) { throw "Disconnected from Redis." }
+    if ($type -lt 0) {
+        Write-RedisLog "ERROR: Disconnected (no type byte)."
+        throw "Disconnected from Redis (no type byte)."
+    }
 
     switch ([char]$type) {
-        '+' { return Read-RedisLine -Stream $Stream }                        # Simple String
-        '-' { $e = Read-RedisLine -Stream $Stream; throw "Redis error: $e" } # Error
-        ':' { return [int64](Read-RedisLine -Stream $Stream) }               # Integer
-
-        '$' {
-            # Bulk String
-            $len = [int](Read-RedisLine -Stream $Stream)
-            if ($len -lt 0) { return $null }                                 # Null bulk
+        '+' {
+            $val = Read-RedisLine -Stream $Stream
+            Write-RedisLog "Simple string: +$val"
+            return $val
+        }
+        '-' {
+            $err = Read-RedisLine -Stream $Stream
+            Write-RedisLog "Error: -$err"
+            throw "Redis error: $err"
+        }
+        ':' {
+            $val = [int64](Read-RedisLine -Stream $Stream)
+            Write-RedisLog "Integer: :$val"
+            return $val
+        }
+        '$' {  # Bulk string
+            $lenStr = Read-RedisLine -Stream $Stream
+            $len = [int]$lenStr
+            if ($len -lt 0) {
+                Write-RedisLog "Bulk string: \$-1 (null)"
+                return $null
+            }
 
             $buf = New-Object byte[] $len
-            Read-Full -Stream $Stream -Buffer $buf -Count $len
+            $null = Read-Full -Stream $Stream -Buffer $buf -Count $len  # discard count, we don't need it here
 
-            # Require CRLF after bulk payload
-            $cr = $Stream.ReadByte(); $lf = $Stream.ReadByte()
-            if ($cr -ne 13 -or $lf -ne 10) {
-                throw "Protocol error: expected CRLF after bulk payload."
+            # consume trailing CRLF
+            $cr = $Stream.ReadByte(); 
+            $lf = $Stream.ReadByte()
+
+            if ($cr -ne 13 -or $lf -ne 10) { 
+                throw "Protocol error: expected CRLF after bulk payload." 
             }
-            return [Text.Encoding]::UTF8.GetString($buf)
+
+            $val = [Text.Encoding]::UTF8.GetString($buf)
+            Write-RedisLog "Bulk string: \$$len => '$val'"
+            return $val
         }
-
         '*' {
-            # Array
             $cnt = [int](Read-RedisLine -Stream $Stream)
-            if ($cnt -lt 0) { return $null }                                  # Null array
-
-            $arr = New-Object object[] $cnt
-            for ($i = 0; $i -lt $cnt; $i++) {
-                $arr[$i] = Read-RedisRESP -Stream $Stream
+            if ($cnt -lt 0) {
+                Write-RedisLog "Array: *-1 (null)"
+                return $null
             }
+            if ($cnt -eq 0) {
+                Write-RedisLog "Array: *0 (empty)"
+                return @()
+            }
+
+            Write-RedisLog "Array: *$cnt (start)"
+            $arr = @()
+            for ($i = 0; $i -lt $cnt; $i++) {
+                $item = Read-RedisRESP -Stream $Stream
+                Write-RedisLog "  [$i] Type: $($item.GetType().Name) - Value: $item"
+                $arr += , $item
+            }
+            Write-RedisLog "Array: *$cnt (end)"
             return $arr
         }
-
-        default { throw "Unknown RESP type byte: $type" }
+        default {
+            Write-RedisLog "Unknown RESP type byte: $type ('$([char]$type)')"
+            throw "Unknown RESP type byte: $type ('$([char]$type)')"
+        }
     }
 }
+
 
 function Write-CacheValue {
     [CmdletBinding()]

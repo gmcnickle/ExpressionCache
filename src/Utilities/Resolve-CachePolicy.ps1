@@ -87,6 +87,7 @@ Resolve-CachePolicy -MaxAge $null
 - Providers can use TtlSeconds directly (e.g., as Redis TTL) and may treat Sliding=$true to refresh
   expiry on access. ExpireAtUtc is computed for convenience; providers may prefer TtlSeconds.
 - All DateTimes are normalized to UTC.
+- Powershell's 'unwrapping' of nullable types at runtime is maddening!
 #>
 function Resolve-CachePolicy {
     [CmdletBinding()]
@@ -102,15 +103,18 @@ function Resolve-CachePolicy {
         [Nullable[TimeSpan]] $DefaultMaxAge
     )
 
-    $nowUtc = (Get-Date).ToUniversalTime()
+    $nowUtc = [DateTime]::UtcNow
+
+    # Helper: ceil to seconds with a minimum of 1s
+    function Local:Get-TtlSec([TimeSpan]$ts) {
+        $ttl = [int][Math]::Ceiling($ts.TotalSeconds)
+        if ($ttl -le 0) { $ttl = 1 }
+        return $ttl
+    }
 
     # 1) Precedence: MaxAge > ExpireAtUtc > SlidingAge
-    if ($PSBoundParameters.ContainsKey('MaxAge')) {
-        $ttl = 1
-        if ($null -ne $MaxAge) {
-            $ttl = [int][Math]::Ceiling([double]$MaxAge.Value.TotalSeconds)
-            if ($ttl -le 0) { $ttl = 1 }
-        }
+    if ($PSBoundParameters.ContainsKey('MaxAge') -and $null -ne $MaxAge) {
+        $ttl = Get-TtlSec ([TimeSpan]$MaxAge)
         return [CachePolicy]@{
             Mode        = 'MaxAge'
             TtlSeconds  = $ttl
@@ -119,24 +123,20 @@ function Resolve-CachePolicy {
         }
     }
 
-    if ($PSBoundParameters.ContainsKey('ExpireAtUtc')) {
-        $abs = if ($null -ne $ExpireAtUtc) { $ExpireAtUtc.Value.ToUniversalTime() } else { $nowUtc.AddSeconds(1) }
-        $ttl = [int][Math]::Ceiling(([double]($abs - $nowUtc).TotalSeconds))
-        if ($ttl -le 0) { $ttl = 1 }
+    if ($PSBoundParameters.ContainsKey('ExpireAtUtc') -and $null -ne $ExpireAtUtc) {
+        # Normalize to UTC safely via DateTimeOffset (handles Unspecified/Local/Utc)
+        $absUtc = ([DateTimeOffset]([datetime]$ExpireAtUtc)).ToUniversalTime().UtcDateTime
+        $ttl    = Get-TtlSec ($absUtc - $nowUtc)
         return [CachePolicy]@{
             Mode        = 'Absolute'
             TtlSeconds  = $ttl
-            ExpireAtUtc = $abs
+            ExpireAtUtc = $absUtc
             Sliding     = $false
         }
     }
 
-    if ($PSBoundParameters.ContainsKey('SlidingAge')) {
-        $ttl = 1
-        if ($null -ne $SlidingAge) {
-            $ttl = [int][Math]::Ceiling([double]$SlidingAge.Value.TotalSeconds)
-            if ($ttl -le 0) { $ttl = 1 }
-        }
+    if ($PSBoundParameters.ContainsKey('SlidingAge') -and $null -ne $SlidingAge) {
+        $ttl = Get-TtlSec ([TimeSpan]$SlidingAge)
         return [CachePolicy]@{
             Mode        = 'Sliding'
             TtlSeconds  = $ttl
@@ -149,8 +149,7 @@ function Resolve-CachePolicy {
     if ($null -ne $DefaultPolicy) { return $DefaultPolicy }
 
     if ($PSBoundParameters.ContainsKey('DefaultMaxAge') -and $null -ne $DefaultMaxAge) {
-        $ttl = [int][Math]::Ceiling([double]$DefaultMaxAge.Value.TotalSeconds)
-        if ($ttl -le 0) { $ttl = 1 }
+        $ttl = Get-TtlSec ([TimeSpan]$DefaultMaxAge)
         return [CachePolicy]@{
             Mode        = 'MaxAge'
             TtlSeconds  = $ttl
@@ -161,7 +160,7 @@ function Resolve-CachePolicy {
 
     # 3) Library-wide fallback (5 minutes)
     $fallback = [TimeSpan]::FromMinutes(5)
-    $ttl2 = [int][Math]::Ceiling([double]$fallback.TotalSeconds)
+    $ttl2 = Get-TtlSec $fallback
     [CachePolicy]@{
         Mode        = 'MaxAge'
         TtlSeconds  = $ttl2

@@ -92,56 +92,61 @@ New-ExpressionCacheKey
 about_CommonParameters
 #>
 function Add-ExpressionCacheProvider {
-    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
-    param(
-        [Parameter(Mandatory, ValueFromPipeline)]
-        [object]$Provider
-    )
+  [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+  param(
+    [Parameter(Mandatory, ValueFromPipeline)]
+    [object]$Provider
+  )
 
-    process {
-        if (-not $script:RegisteredStorageProviders) {
-            $script:RegisteredStorageProviders = @()
-        }
-
-        # Validate/normalize spec (safe to do even under -WhatIf)
-        $spec = Test-ExpressionCacheProviderSpec -Spec $Provider
-
-        # One-time merge: InitializeArgs -> Config, then drop InitializeArgs
-        if ($spec.PSObject.Properties.Name -contains 'InitializeArgs' -and $spec.InitializeArgs) {
-            $spec.Config = Merge-ExpressionCacheConfig -Base $spec.Config -Overrides $spec.InitializeArgs
-            $null = $spec.PSObject.Properties.Remove('InitializeArgs')
-        }
-
-        # Duplicate check (fail fast, even with -WhatIf)
-        $existing = $script:RegisteredStorageProviders |
-            Where-Object { $_.Name -eq $spec.Name } |
-            Select-Object -First 1
-        if ($existing) {
-            throw "ExpressionCache: A provider named '$($spec.Name)' is already registered."
-        }
-
-        $registered = $false
-        $target = "Provider '$($spec.Name)'"
-
-        # Register
-        if ($PSCmdlet.ShouldProcess($target, 'Register')) {
-            $script:RegisteredStorageProviders += , $spec
-            $registered = $true
-        }
-
-        # Eager initialize (only if we actually registered above)
-        if ($registered -and $spec.Initialize) {
-            if ($PSCmdlet.ShouldProcess($target, 'Initialize')) {
-                $paramSet = Build-SplatFromConfig -CommandName $spec.Initialize -Config $spec.Config
-                Assert-MandatoryParamsPresent -CommandName $spec.Initialize -Splat $paramSet
-                & $spec.Initialize @paramSet
-
-                if ($spec.Config.PSObject.Properties.Name -contains 'Initialized') {
-                    $spec.Config.Initialized = $true
-                }
-            }
-        }
-
-        return $spec
+  process {
+    if (-not $script:RegisteredStorageProviders) {
+      $script:RegisteredStorageProviders = [ordered]@{}
     }
+
+    # Validate/normalize spec (safe to do even under -WhatIf)
+    $spec = Test-ExpressionCacheProviderSpec -Spec $Provider
+
+    # One-time merge: InitializeArgs -> Config, then drop InitializeArgs
+    if ($spec.PSObject.Properties.Name -contains 'InitializeArgs' -and $spec.InitializeArgs) {
+      $spec.Config = Merge-ExpressionCacheConfig -Base $spec.Config -Overrides $spec.InitializeArgs
+      $null = $spec.PSObject.Properties.Remove('InitializeArgs')
+    }
+
+    # Duplicate check (fail fast, even with -WhatIf)
+    if ($script:RegisteredStorageProviders.Contains($spec.Name)) {
+      throw "ExpressionCache: A provider named '$($spec.Name)' is already registered."
+    }
+
+    $registered = $false
+    $target = "Provider '$($spec.Name)'"
+
+    # Register
+    if ($PSCmdlet.ShouldProcess($target, 'Register')) {
+      $script:RegisteredStorageProviders.Add($spec.Name, $spec)
+      $registered = $true
+    }
+
+    # Eager initialize (only if we actually registered above)
+    if ($registered -and $spec.Initialize) {
+      if ($PSCmdlet.ShouldProcess($target, 'Initialize')) {
+        $paramSet = Build-SplatFromConfig -CommandName $spec.Initialize -Config $spec.Config
+        Assert-MandatoryParamsPresent -CommandName $spec.Initialize -Splat $paramSet
+        & $spec.Initialize @paramSet
+
+        $state = $provider.State
+        if (-not $state) {
+          $state = [PSCustomObject]@{
+            Initialized = $true
+          }
+          $null = $provider | Set-ECProperty -Name 'State' -Value $state -DontEnforceType
+        } 
+        else {
+          # set by the provider during initialize, just add the Initialized bit.
+          $null = $state | Set-ECProperty -Name "Initialized" -Value $true -DontEnforceType
+        }
+      }
+    }
+
+    return $spec
+  }
 }

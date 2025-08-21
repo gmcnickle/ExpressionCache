@@ -58,9 +58,9 @@ function Build-CallableSplat {
     # Gather raw candidates from Config + Arguments (with precedence)
     $candidates = @{}
     if ($Config) {
-        foreach ($prop in $Config.PSObject.Properties) {
-            if ($accepted.Contains($prop.Name)) {
-                $candidates[$prop.Name] = $prop.Value
+        foreach ($k in $Config.Keys) {
+            if ($accepted.Contains($k)) {
+                $candidates[$k] = $Config[$k]
             }
         }
     }

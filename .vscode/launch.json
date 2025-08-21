@@ -18,6 +18,15 @@
       "args": ["-Debug"],
       "cwd": "${workspaceFolder}",
       "createTemporaryIntegratedConsole": true
+    },
+    {
+      "name": "Sample: InMemoryCache",
+      "type": "PowerShell",
+      "request": "launch",
+      "script": "${workspaceFolder}/samples/implementing-yourown-provider/InMemoryCache.Sample.ps1",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "createTemporaryIntegratedConsole": true
     }
   ]
 }

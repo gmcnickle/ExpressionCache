@@ -61,9 +61,8 @@ function Remove-ExpressionCacheProvider {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
     param(
         [Parameter(Mandatory, ValueFromPipeline, ValueFromPipelineByPropertyName)]
-        [Alias('ProviderName')]
         [ValidateNotNullOrEmpty()]
-        [string]$Name,
+        [string]$ProviderName,
 
         [switch]$PassThru
     )
@@ -71,31 +70,32 @@ function Remove-ExpressionCacheProvider {
     begin { $removed = @() }
 
     process {
-        $matchesFound = $script:RegisteredStorageProviders |
-        Where-Object { $_.Name -eq $Name }
+        $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
 
-        if (-not $matchesFound) {
-            Write-Warning "ExpressionCache: No provider named '$Name'."
+        if (-not $provider) {
+            Write-Warning "ExpressionCache: No provider named '$ProviderName'."
             return
         }
 
-        foreach ($prov in $matchesFound) {
-            if ($PSCmdlet.ShouldProcess($prov.Name, 'Remove storage provider')) {
-                # Optional teardown hook (if you add one in provider specs later)
-                if ($prov.PSObject.Properties.Name -contains 'Deinitialize' -and $prov.Deinitialize) {
-                    try { & $prov.Deinitialize } catch { Write-Verbose "Deinitialize failed for '$($prov.Name)': $_" }
-                }
+        if ($PSCmdlet.ShouldProcess($providerName, 'Remove storage provider')) {
 
-                # Remove this specific instance
-                $script:RegisteredStorageProviders =
-                @($script:RegisteredStorageProviders | Where-Object { $_ -ne $prov })
+            # Optional teardown hook (if you add one in provider specs later)
+            if ($provider.Name -contains 'Deinitialize' -and $provider.Deinitialize) {
+                try { & $provider.Deinitialize } catch { Write-Verbose "Deinitialize failed for '$($provider.Name)': $_" }
+            }
 
-                if ($PassThru) { $removed += , $prov }
+            # Remove this specific instance
+            $script:RegisteredStorageProviders.Remove($ProviderName)
+
+            if ($PassThru) { 
+                $removed += , $prov 
             }
         }
     }
 
     end {
-        if ($PassThru -and $removed) { $removed }
+        if ($PassThru -and $removed) { 
+            $removed 
+        }
     }
 }

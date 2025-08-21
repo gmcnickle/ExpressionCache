@@ -6,11 +6,16 @@ if (-not (Get-Module ExpressionCache)) {
 }
 
 function Ensure-ExpressionCacheInitialized {
+    $providers = $null
     try {
         # Any harmless call that assumes init; adjust if needed
-        [void](Get-ExpressionCacheProvider)
+        $providers = Get-ExpressionCacheProvider
     } catch {
-        Initialize-ExpressionCache -AppName 'ExpressionCache-Pester' | Out-Null
+    }
+    finally {
+        if (-not $providers) {
+            Initialize-ExpressionCache -AppName 'ExpressionCache-Pester' | Out-Null
+        }
     }
 }
 
@@ -18,7 +23,7 @@ function Reset-Providers-ForTests {
     try {
         $all = Get-ExpressionCacheProvider
         foreach ($p in $all) {
-            Remove-ExpressionCacheProvider -Name $p.Name -ErrorAction SilentlyContinue | Out-Null
+            Remove-ExpressionCacheProvider -ProviderName $p.Name -ErrorAction SilentlyContinue | Out-Null
         }
     } catch {
         Initialize-ExpressionCache -AppName 'ExpressionCache-Pester' | Out-Null

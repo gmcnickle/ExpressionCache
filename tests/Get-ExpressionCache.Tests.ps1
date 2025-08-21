@@ -18,7 +18,7 @@ Describe 'ExpressionCache :: Providers' {
     $target = "Provider '$name'"
     if ($PSCmdlet.ShouldProcess($target, 'Reset (clear cache)')) {
       try {
-        # Ensure no prompts in tests; pass Force through to providers that honor it
+        # Ensure no prompts in tests; pass Force through to providers that honor it 
         Clear-ExpressionCache -ProviderName $name -Force -Confirm:$false -ErrorAction Stop | Out-Null
       }
       catch {
@@ -44,7 +44,7 @@ Describe 'ExpressionCache :: Providers' {
 
   function script:Get-RedisEnabled {
     # does not check if you have redis running in a container on windows... If so, just return $true here...
-    $IsLinux -and $env:EXPRCACHE_SKIP_REDIS -ne '1' -and -not [string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)
+    return $IsLinux -and $env:EXPRCACHE_SKIP_REDIS -ne '1' -and -not [string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)
   }
 
   function script:Get-ProviderConfigs {
@@ -52,46 +52,66 @@ Describe 'ExpressionCache :: Providers' {
 
     $testPrefix = Get-TestPrefix
 
-    $providerConfigs = @(
-      @{ Key = 'LocalFileSystemCache'; Config = @{ Prefix = $testPrefix } }
+    # Build list of provider descriptors (array)
+    $providerList = @(
+      @{ Name = 'LocalFileSystemCache'; Config = @{ Prefix = $testPrefix } }
     )
 
-    $enableRedis = Get-RedisEnabled
-    if ($enableRedis) {
-      $providerConfigs += @{ Key = 'Redis'; Config = @{ Database = 15; Prefix = $testPrefix } }
+    if (Get-RedisEnabled) {
+      $providerList += @{ Name = 'Redis'; Config = @{ Database = 15; Prefix = $testPrefix } }
     }
 
-    # Only initialize providers in RUN phase
+    # Convert array to keyed [ordered] hashtable (expected by Initialize-ExpressionCache)
+    $providerMap = [ordered]@{}
+    foreach ($p in $providerList) {
+      $providerMap[$p.Name] = $p
+    }
+
+    # Initialize providers unless we're in discovery mode
     $providers = if ($Discovery) { $null } else {
-      Initialize-ExpressionCache -AppName 'TestApp' -Providers $providerConfigs
+      Initialize-ExpressionCache -AppName 'TestApp' -Providers $providerMap
     }
 
     $testCases = @()
 
     if ($Discovery) {
+      # Add test cases with just ProviderName and SkipReason
       $testCases += @{ ProviderName = 'LocalFileSystemCache'; SkipReason = $null }
-      if ($enableRedis) {
+
+      if (Get-RedisEnabled) {
         $testCases += @{ ProviderName = 'Redis'; SkipReason = $null }
       }
       else {
-        $testCases += @{ ProviderName = 'Redis'; SkipReason = 'Redis tests disabled on this environment (non-Linux or missing credentials).' }
+        $testCases += @{
+          ProviderName = 'Redis'
+          SkipReason   = 'Redis tests disabled on this environment (non-Linux or missing credentials).'
+        }
       }
     }
     else {
-      $fs = $providers | Where-Object Name -eq 'LocalFileSystemCache'
-      if ($fs) { $testCases += @{ Provider = $fs; ProviderName = $fs.Name; SkipReason = $null } }
+      if ($providers -and $providers.Contains('LocalFileSystemCache')) {
+        $fs = $providers['LocalFileSystemCache']
+        $testCases += @{ Provider = $fs; ProviderName = $fs.Name; SkipReason = $null }
+      }
 
-      if ($enableRedis) {
-        $rd = $providers | Where-Object Name -eq 'Redis'
-        if ($rd) { $testCases += @{ Provider = $rd; ProviderName = $rd.Name; SkipReason = $null } }
+      if (Get-RedisEnabled) {
+        if ($providers -and $providers.Contains('Redis')) {
+          $rd = $providers['Redis']
+          $testCases += @{ Provider = $rd; ProviderName = $rd.Name; SkipReason = $null }
+        }
       }
       else {
-        $testCases += @{ Provider = $null; ProviderName = 'Redis'; SkipReason = 'Redis tests disabled on this environment (non-Linux or missing credentials).' }
+        $testCases += @{
+          Provider     = $null
+          ProviderName = 'Redis'
+          SkipReason   = 'Redis tests disabled on this environment (non-Linux or missing credentials).'
+        }
       }
     }
 
     return $testCases
   }
+
 
   function script:Add-Common {
     $here = $PSScriptRoot                                   
@@ -120,7 +140,7 @@ Describe 'ExpressionCache :: Providers' {
 
   Context 'Core caching semantics' {
 
-    It 'computes on a miss and writes to cache' -TestCases $script:Cases {
+    It '(<ProviderName>) computes on a miss and writes to cache' -TestCases $script:Cases {
       param($Provider, $ProviderName, $SkipReason)
       if ($SkipReason) { Set-ItResult -Skipped -Because $SkipReason; return }
 
@@ -137,7 +157,7 @@ Describe 'ExpressionCache :: Providers' {
       $exec.Value | Should -Be 1
     }
 
-    It 'returns from cache on a hit (does not re-execute)' -TestCases $script:Cases {
+    It '(<ProviderName>) returns from cache on a hit (does not re-execute)' -TestCases $script:Cases {
       param($Provider, $ProviderName, $SkipReason)
       if ($SkipReason) { Set-ItResult -Skipped -Because $SkipReason; return }
 
@@ -154,7 +174,7 @@ Describe 'ExpressionCache :: Providers' {
       $exec.Value | Should -Be 1
     }
 
-    It 'does not cache $null results' -TestCases $script:Cases {
+    It '(<ProviderName>) does not cache $null results' -TestCases $script:Cases {
       param($Provider, $ProviderName, $SkipReason)
       if ($SkipReason) { Set-ItResult -Skipped -Because $SkipReason; return }
 
@@ -172,7 +192,7 @@ Describe 'ExpressionCache :: Providers' {
       $exec.Value | Should -Be 2
     }
 
-    It 'auto-generates a stable key and includes argument differences' -TestCases $script:Cases {
+    It '(<ProviderName>) auto-generates a stable key and includes argument differences' -TestCases $script:Cases {
       param($SkipReason)
       if ($SkipReason) { Set-ItResult -Skipped -Because $SkipReason; return }
 
@@ -189,7 +209,7 @@ Describe 'ExpressionCache :: Providers' {
 
   Context 'Expiration & invalidation' {
 
-    It 'expires stale entries based on MaximumAge/TTL' -TestCases $script:Cases {
+    It '(<ProviderName>) expires stale entries based on MaximumAge/TTL' -TestCases $script:Cases {
       param($Provider, $ProviderName, $SkipReason)
       if ($SkipReason) { Set-ItResult -Skipped -Because $SkipReason; return }
 
@@ -226,7 +246,7 @@ Describe 'ExpressionCache :: Providers' {
     }
 
     # FS-specific cache version invalidation
-    It 'invalidates cache when CacheVersion changes (FS only)' -TestCases $script:Cases {
+    It '(<ProviderName>) invalidates cache when CacheVersion changes (FS only)' -TestCases $script:Cases {
       param($Provider, $ProviderName, $SkipReason)
       if ($SkipReason) { Set-ItResult -Skipped -Because $SkipReason; return }
       if ($ProviderName -ne 'LocalFileSystemCache') { Set-ItResult -Skipped -Because 'Not applicable to this provider'; return }
@@ -284,7 +304,7 @@ Describe 'ExpressionCache :: Providers' {
 
   Context 'Initialization & provider integrity' {
 
-    It 'lazily initializes (first write sets up backing store)' -TestCases $script:Cases {
+    It '(<ProviderName>) lazily initializes (first write sets up backing store)' -TestCases $script:Cases {
       param($Provider, $ProviderName, $SkipReason)
       if ($SkipReason) { Set-ItResult -Skipped -Because $SkipReason; return }
 
@@ -306,8 +326,8 @@ Describe 'ExpressionCache :: Providers' {
     }
 
     It 'throws a clear error for an unknown StorageType' {
-      { Get-ExpressionCache -ScriptBlock { 1 } -ProviderName 'Nope' } |
-      Should -Throw '*Provider*not registered*'
+      $name = 'Nope'
+      { Get-ExpressionCache -ProviderName $name -ScriptBlock { 1 } } | Should -Throw '*Provider*not registered*'
     }
 
     It 'throws a clear error when provider function is missing (standalone)' {
@@ -338,7 +358,7 @@ Describe 'ExpressionCache :: Providers' {
     #   $orig = $defaults.LocalFileSystemCache.Config.Prefix
 
     #   Initialize-ExpressionCache -AppName X -Providers @(
-    #     @{ Key = 'LocalFileSystemCache'; Config = @{ Prefix = 't:' } }
+    #     @{ Name = 'LocalFileSystemCache'; Config = @{ Prefix = 't:' } }
     #   ) | Out-Null
 
     #   (Get-DefaultProviders).LocalFileSystemCache.Config.Prefix | Should -Be $orig

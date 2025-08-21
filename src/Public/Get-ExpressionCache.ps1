@@ -128,16 +128,14 @@ function Get-ExpressionCache {
     }
 
     if (-not $ProviderName) {
-        $ProviderName = $env:EXPRCACHE_DEFAULT_PROVIDER
+      $ProviderName = $env:EXPRCACHE_DEFAULT_PROVIDER
 
-        if (-not $ProviderName) { 
-          $ProviderName = 'LocalFileSystemCache' 
-        }
+      if (-not $ProviderName) { 
+        $ProviderName = 'LocalFileSystemCache' 
+      }
     }
 
-    $strategy = $script:RegisteredStorageProviders |
-    Where-Object { $_.Name -eq $ProviderName } |
-    Select-Object -First 1
+    $strategy = Get-ExpressionCacheProvider -ProviderName $ProviderName -NoFallback
 
     if (-not $strategy) {
       throw "Provider '$ProviderName' not registered."
@@ -163,9 +161,7 @@ function Get-ExpressionCache {
       throw "Provider function '$providerFunc' not found."
     }
 
-    $cacheVersion = if ($strategy.Config.PSObject.Properties.Name -contains 'CacheVersion' -and $strategy.Config.CacheVersion) {
-      $strategy.Config.CacheVersion
-    }
+    $cacheVersion = if ($strategy.Config.Contains('CacheVersion')) { $strategy.Config.CacheVersion }
     else {
       $script:Config.Version
     }
@@ -177,7 +173,16 @@ function Get-ExpressionCache {
 
     $defaultPolicy = $strategy.Config.DefaultPolicy
     $defaultMaxAge = $strategy.Config.DefaultMaxAge
-    $policy = Resolve-CachePolicy -MaxAge $MaxAge -ExpireAtUtc $ExpireAtUtc -SlidingAge $SlidingAge -DefaultPolicy $defaultPolicy -DefaultMaxAge $defaultMaxAge
+
+    $policyArgs = @{}
+
+    if ($null -ne $MaxAge) { $policyArgs.MaxAge = $MaxAge }
+    if ($null -ne $ExpireAtUtc) { $policyArgs.ExpireAtUtc = $ExpireAtUtc }
+    if ($null -ne $SlidingAge) { $policyArgs.SlidingAge = $SlidingAge }
+    if ($null -ne $defaultPolicy) { $policyArgs.DefaultPolicy = $defaultPolicy }
+    if ($null -ne $defaultMaxAge) { $policyArgs.DefaultMaxAge = $defaultMaxAge }
+
+    $policy = Resolve-CachePolicy @policyArgs
 
     # Base args common to all providers
     $runtimeArgs = @{

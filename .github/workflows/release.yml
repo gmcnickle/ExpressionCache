@@ -1,4 +1,4 @@
-name: Bump & Release
+name: release
 
 on:
   workflow_dispatch:
@@ -9,43 +9,145 @@ on:
         default: patch
         type: choice
         options: [patch, minor, major]
+      notes:
+        description: >-
+          (Optional) Release notes in Markdown. If omitted, the workflow will
+          pull the section for the new version from CHANGELOG.md.
+        required: false
+        type: string
 
 permissions:
-  contents: write  
+  contents: write  # required to push commits/tags and create releases
 
 jobs:
-  release:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Run Pester tests
+        shell: pwsh
+        run: |
+          if (Test-Path "$PWD/tests") {
+            Install-Module Pester -Force -Scope CurrentUser
+            Invoke-Pester -CI
+          } else {
+            Write-Host "No tests/ folder found. Skipping."
+          }
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      BUMP_PART: ${{ github.event.inputs.bump }}
+      PSD1_PATH: src/ExpressionCache.psd1
+      MANUAL_NOTES: ${{ github.event.inputs.notes }}
+    steps:
+      - name: Checkout (full history for tags)
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup PowerShell
-        uses: actions/setup-powershell@v2
-
-      - name: Bump version in psd1
+      - name: Bump module version in PSD1
         id: bump
         shell: pwsh
         run: |
-          ./Scripts/Update-ModuleVersion.ps1 `
-            -Bump '${{ github.event.inputs.bump }}' `
-            -ManifestPath './src/ExpressionCache.psd1'
+          $psd1 = "${{ env.PSD1_PATH }}"
+          if (-not (Test-Path $psd1)) { throw "Manifest not found at $psd1" }
 
-      - name: Commit version bump
-        shell: bash
+          $manifest = Test-ModuleManifest $psd1
+          $ver = [version]$manifest.Version
+
+          switch ($env:BUMP_PART) {
+            'major' { $new = [version]"$($ver.Major + 1).0.0" }
+            'minor' { $new = [version]"$($ver.Major).$($ver.Minor + 1).0" }
+            default { $new = [version]"$($ver.Major).$($ver.Minor).$($ver.Build + 1)" }
+          }
+
+          Write-Host "Bumping version $ver -> $new"
+          Update-ModuleManifest -Path $psd1 -ModuleVersion $new
+
+          "newVersion=$new" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Extract notes from CHANGELOG.md (if no manual notes)
+        id: changelog
+        if: ${{ !github.event.inputs.notes }}
+        shell: pwsh
         run: |
-          NEW_VERSION="$(grep -Po "(?<=ModuleVersion = ')[^']+" ./src/ExpressionCache.psd1)"
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add ./src/ExpressionCache.psd1
-          git commit -m "chore(release): bump to $NEW_VERSION"
-          git tag "v$NEW_VERSION"
-          git push --follow-tags
+          $ver = "${{ steps.bump.outputs.newVersion }}"
+          $pattern = "^##\s+\[?$([regex]::Escape($ver))\]?(.*)$"
+          if (-not (Test-Path "CHANGELOG.md")) {
+            Write-Host "No CHANGELOG.md found; using fallback."
+            "body=" + "Automated release $ver." | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            exit 0
+          }
+
+          $lines = Get-Content CHANGELOG.md
+          $match = $lines | Select-String -Pattern $pattern -SimpleMatch:$false | Select-Object -First 1
+          if (-not $match) {
+            Write-Host "No changelog section found for $ver; using fallback."
+            "body=" + "Automated release $ver." | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            exit 0
+          }
+
+          $startIndex = $match.LineNumber - 1
+          $rest = $lines[$startIndex..($lines.Length-1)]
+          $nextHeader = ($rest | Select-String -Pattern '^##\s+' -SimpleMatch | Select-Object -Skip 1 -First 1)
+          if ($nextHeader) {
+            $endIndex = $nextHeader.LineNumber - 2
+            $section = $rest[0..$endIndex]
+          } else {
+            $section = $rest
+          }
+
+          $body = ($section -join "`n").Trim()
+          "body=$body" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Commit & tag
+        shell: pwsh
+        run: |
+          git config user.name  "github-actions"
+          git config user.email "actions@github.com"
+
+          git add "${{ env.PSD1_PATH }}"
+          git commit -m "chore(release): bump version to ${{ steps.bump.outputs.newVersion }} [skip ci]" || echo "No changes to commit."
+
+          $branch = "${{ github.ref_name }}"
+          git push origin "HEAD:$branch"
+
+          $tag = "v${{ steps.bump.outputs.newVersion }}"
+          git tag $tag
+          git push origin $tag
+
+      - name: Publish to PowerShell Gallery
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        shell: pwsh
+        run: |
+          if (-not $env:PSGALLERY_API_KEY) { throw "PSGALLERY_API_KEY secret is not set." }
+
+          # Decide release notes priority: manual > changelog > fallback
+          if ("${{ env.MANUAL_NOTES }}") {
+            $notes = @'
+${{ env.MANUAL_NOTES }}
+'@
+          } elseif ("${{ steps.changelog.outputs.body }}") {
+            $notes = "${{ steps.changelog.outputs.body }}"
+          } else {
+            $notes = "Automated release ${{ steps.bump.outputs.newVersion }}."
+          }
+
+          # Ensure PowerShellGet is available
+          if (-not (Get-Module -ListAvailable PowerShellGet)) {
+            Install-Module PowerShellGet -Force -Scope CurrentUser
+          }
+
+          Publish-Module -Path src -NuGetApiKey $env:PSGALLERY_API_KEY -ReleaseNotes $notes -Verbose
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.bump.outputs.NEW_VERSION }}
-          generate_release_notes: true
+          tag_name: v${{ steps.bump.outputs.newVersion }}
+          name: ExpressionCache v${{ steps.bump.outputs.newVersion }}
+          body: ${{ github.event.inputs.notes || steps.changelog.outputs.body || format('Automated release {0}.', steps.bump.outputs.newVersion) }}

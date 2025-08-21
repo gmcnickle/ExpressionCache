@@ -31,53 +31,6 @@ Describe 'Add-ExpressionCacheProvider' {
     }
     AfterEach { Reset-Providers-ForTests }
 
-    It 'normalizes the spec via Test-ExpressionCacheProviderSpec and registers it' {
-        # Use Key to ensure normalization happens (Key→Name).
-        $spec = @{
-            Name        = 'LocalFileSystemCache'
-            GetOrCreate = 'Get-LocalFileSystem-CachedValue'
-            Config      = [pscustomobject]@{ Prefix = 'X' }
-        }
-
-        $ret = Add-ExpressionCacheProvider -Provider $spec
-
-        # Returns the normalized spec and registers it
-        $ret | Should -Not -BeNullOrEmpty
-        $ret.Name | Should -Be 'LocalFileSystemCache'
-
-        $all = Get-ExpressionCacheProvider
-        $all.Name | Should -Contain 'LocalFileSystemCache'
-    }
-
-    It 'performs a one-time merge of InitializeArgs into Config (overrides win) and removes InitializeArgs' {
-        $spec = @{
-            Name           = 'Redis'
-            GetOrCreate    = 'Get-Redis-CachedValue'
-            Config         = [pscustomobject]@{
-                Prefix   = 'ExpressionCache:v1:App'
-                Host     = 'will-be-overwritten'
-                Database = 0
-            }
-            InitializeArgs = @{
-                Host     = '127.0.0.1'
-                Port     = 6379
-                Password = 'pw'
-            }
-        }
-
-        $ret = Add-ExpressionCacheProvider -Provider $spec
-
-        # InitializeArgs removed from returned spec
-        ($ret.PSObject.Properties.Name -contains 'InitializeArgs') | Should -BeFalse
-
-        # Config contains merged + overridden values
-        $ret.Config.Host     | Should -Be '127.0.0.1'
-        $ret.Config.Port     | Should -Be 6379
-        $ret.Config.Password | Should -Be 'pw'
-        $ret.Config.Prefix   | Should -Be 'ExpressionCache:v1:App'
-        $ret.Config.Database | Should -Be 0
-    }
-
     It 'rejects duplicate provider names (case-insensitive), even under -WhatIf' {
         $p1 = @{
             Name        = 'DupName'
@@ -110,6 +63,13 @@ Describe 'Add-ExpressionCacheProvider' {
                 & $ScriptBlock @Arguments
             }
 
+            $initialProviders = Get-ExpressionCacheProvider
+            $providers = @($initialProviders.Keys)
+            foreach ($p in $providers)
+            {
+                Remove-ExpressionCacheProvider -ProviderName $p
+            }
+
             $spec = @{
                 Name        = 'NoOp'
                 Initialize  = 'Initialize-EC-Fake'
@@ -132,7 +92,7 @@ Describe 'Add-ExpressionCacheProvider' {
             Set-Variable -Name EC_InitCalls -Scope Script -Value 0
 
             function Initialize-EC-Fake {
-                param([string]$HostAddr, [int]$Port)
+                param([string]$HostAddr, [int]$Port, [string]$OptionalThing)
                 $script:EC_InitCalls++
             }
 
@@ -144,7 +104,6 @@ Describe 'Add-ExpressionCacheProvider' {
                     HostAddr      = '10.0.0.5'
                     Port          = 6380
                     OptionalThing = 'foo'
-                    Initialized   = $false
                 }
             }
 
@@ -152,7 +111,7 @@ Describe 'Add-ExpressionCacheProvider' {
 
             # Initialize called exactly once with params from Config
             $script:EC_InitCalls | Should -Be 1
-            $spec.Config.Initialized | Should -Be $true
+            $spec.State.Initialized | Should -Be $true
             $spec.Config.HostAddr | Should -Be '10.0.0.5'
             $spec.Config.Port | Should -Be 6380
             $spec.Config.OptionalThing | Should -Be 'foo'
@@ -185,10 +144,9 @@ Describe 'Add-ExpressionCacheProvider' {
 
         $ret = Add-ExpressionCacheProvider -Provider $spec
 
-        $ret | Should -BeOfType 'System.Management.Automation.PSCustomObject'
-        $ret.PSObject.Properties.Name | Should -Contain 'Name'
-        $ret.PSObject.Properties.Name | Should -Contain 'Config'
-        $ret.PSObject.Properties.Name | Should -Contain 'GetOrCreate'
-        ($ret.PSObject.Properties.Name -contains 'InitializeArgs') | Should -BeFalse
+        ($ret -is [System.Collections.IDictionary]) | Should -BeTrue
+        ($ret.Contains('Name')) | Should -BeTrue
+        ($ret.Contains('Config')) | Should -BeTrue
+        ($ret.Contains('GetOrCreate')) | Should -BeTrue
     }
 }

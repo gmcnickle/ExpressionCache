@@ -1,61 +1,55 @@
 function Merge-ObjectDeep {
     param(
-        [Parameter(Mandatory)] 
-        $Base,
-        
-        [Parameter(Mandatory)] 
-        $Override
+        [Parameter(Mandatory)] $Base,
+        [Parameter(Mandatory)] $Override
     )
 
-    if ($null -eq $Override) { 
-        return $Base 
+    if ($null -eq $Override) { return $Base }
+
+    function _ToHashtable($o) {
+        if ($null -eq $o) { return $null }
+        if ($o -is [hashtable]) { return $o }
+        if ($o -is [pscustomobject]) {
+            $ht = @{}
+            foreach ($prop in $o.PSObject.Properties) { $ht[$prop.Name] = $prop.Value }
+            return $ht
+        }
+        return $o
     }
 
-    # For hashtables and PSCustomObjects, walk properties
-    if ($Base -is [hashtable] -or $Base -is [pscustomobject]) {
+    $bIsMap = ($Base -is [hashtable] -or $Base -is [pscustomobject])
+    $oIsMap = ($Override -is [hashtable] -or $Override -is [pscustomobject])
 
-        $result = if ($Base -is [hashtable]) { 
-            @{} 
-        } 
-        else { 
-            [pscustomobject]@{} 
-        }
+    if ($bIsMap -or $oIsMap) {
+        $b = _ToHashtable $Base
+        $o = _ToHashtable $Override
 
-        $allKeys = @(if ($Base -is [hashtable]) { $Base.Keys } else { $Base.PSObject.Properties.Name }) + @(if ($Override -is [hashtable]) { $Override.Keys } else { $Override.PSObject.Properties.Name }) | Select-Object -Unique
+        $resultIsPso = ($Base -is [pscustomobject])
+        $result = if ($resultIsPso) { [pscustomobject]@{} } else { @{} }
+
+        $bKeys = if ($b) { $b.Keys } else { @() }
+        $oKeys = if ($o) { $o.Keys } else { @() }
+        $allKeys = @($bKeys + $oKeys | Select-Object -Unique)
 
         foreach ($k in $allKeys) {
-            $b = if ($Base -is [hashtable]) { 
-                $Base[$k] 
-            } 
-            else { 
-                $Base.$k 
-            }
+            $bv = if ($b -and $b.ContainsKey($k)) { $b[$k] } else { $null }
+            $ov = if ($o -and $o.ContainsKey($k)) { $o[$k] } else { $null }
 
-            $o = if ($Override -is [hashtable]) { 
-                $Override[$k] 
-            } 
-            else { 
-                $Override.$k 
-            }
+            $val =
+                if ($null -ne $ov -and ($bv -is [hashtable] -or $bv -is [pscustomobject])) { Merge-ObjectDeep $bv $ov }
+                elseif ($null -ne $ov) { $ov }
+                else { $bv }
 
-            if ($null -ne $o -and ($b -is [hashtable] -or $b -is [pscustomobject])) {
-                $result | Add-Member -NotePropertyName $k -NotePropertyValue (Merge-ObjectDeep $b $o)
-            } 
-            elseif ($null -ne $o) {
-                $result | Add-Member -NotePropertyName $k -NotePropertyValue $o
-            } 
-            else {
-                $result | Add-Member -NotePropertyName $k -NotePropertyValue $b
+            if ($resultIsPso) {
+                $result | Add-Member -NotePropertyName $k -NotePropertyValue $val
+            } else {
+                $result[$k] = $val
             }
         }
         return $result
     }
 
-    # For scalars/arrays: override wins if provided, else base
-    if ($null -ne $Override) { 
-        return $Override 
-    } 
-    else { 
-        return $Base 
-    }
+    # arrays/scalars: override wins if provided
+    if ($null -ne $Override) { return $Override }
+    return $Base
 }

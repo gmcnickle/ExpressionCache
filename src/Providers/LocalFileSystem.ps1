@@ -158,21 +158,15 @@ function Initialize-LocalFileSystem-Cache {
         [string]$ProviderName,
         
         [Parameter(Mandatory)]
-        [string]$CacheVersion
+        [string]$CacheVersion,
+
+        [Parameter(Mandatory)]
+        [timespan]$DefaultMaxAge
     )
 
     if (-not (Test-Path -LiteralPath $CacheFolder)) {
         New-Item -ItemType Directory -Path $CacheFolder -Force | Out-Null
     }
 
-    $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
-
-    $state = $provider.State
-    if (-not $state) {
-        $state = [PSCustomObject]@{
-            Initialized = $true
-        }
-    } 
-
-    $null = $provider | Set-ECProperty -Name 'State' -Value $state -DontEnforceType
+    $null = Get-ExpressionCacheProvider -ProviderName $ProviderName
 }

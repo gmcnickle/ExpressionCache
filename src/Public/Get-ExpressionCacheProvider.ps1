@@ -17,13 +17,18 @@ Get-ExpressionCacheProvider -Name 'LocalFileSystemCache'
 #>
 function Get-ExpressionCacheProvider { 
     param(
-        [string]$ProviderName
+        [string]$ProviderName,
+        [switch]$NoFallback
     ) 
 
-    if ($ProviderName) { 
-        $script:RegisteredStorageProviders | Where-Object Name -eq $ProviderName 
+    if ($script:RegisteredStorageProviders.Contains($ProviderName)) {
+        return $script:RegisteredStorageProviders[$ProviderName]
     }
-    else { 
-        $script:RegisteredStorageProviders 
+
+    if ($NoFallback)
+    {
+        return
     }
+
+    return $script:RegisteredStorageProviders
 }
