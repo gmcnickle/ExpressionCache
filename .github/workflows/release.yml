@@ -126,6 +126,7 @@ jobs:
           MANUAL_NOTES: ${{ env.MANUAL_NOTES }}
           CHANGELOG_BODY: ${{ steps.changelog.outputs.body }}
           NEW_VERSION: ${{ steps.bump.outputs.newVersion }}
+          PSD1_PATH: ${{ env.PSD1_PATH }}
         shell: pwsh
         run: |
           if (-not $env:PSGALLERY_API_KEY) { throw "PSGALLERY_API_KEY secret is not set." }
@@ -139,12 +140,34 @@ jobs:
             $notes = "Automated release $env:NEW_VERSION."
           }
 
-          # Ensure PowerShellGet is available
+          # Resolve module paths & stage if folder name doesn't match module name
+          $psd1 = $env:PSD1_PATH
+          if (-not (Test-Path $psd1)) { throw "Manifest not found at $psd1" }
+
+          $manifest    = Test-ModuleManifest $psd1
+          $moduleName  = $manifest.Name
+          if (-not $moduleName) { $moduleName = [IO.Path]::GetFileNameWithoutExtension($psd1) }
+
+          $srcDir      = Split-Path -Parent $psd1   # e.g., 'src'
+          $srcLeaf     = Split-Path -Leaf $srcDir
+
           if (-not (Get-Module -ListAvailable PowerShellGet)) {
             Install-Module PowerShellGet -Force -Scope CurrentUser
           }
 
-          Publish-Module -Path src -NuGetApiKey $env:PSGALLERY_API_KEY -ReleaseNotes $notes -Verbose
+          if ($srcLeaf -ne $moduleName) {
+            # Stage into a folder named after the module (PowerShellGet requirement)
+            $stageRoot = Join-Path $PWD 'pkg'
+            $moduleDir = Join-Path $stageRoot $moduleName
+            Remove-Item $stageRoot -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Path $moduleDir -Force | Out-Null
+
+            Copy-Item -Path (Join-Path $srcDir '*') -Destination $moduleDir -Recurse -Force
+          } else {
+            $moduleDir = $srcDir
+          }
+
+          Publish-Module -Path $moduleDir -NuGetApiKey $env:PSGALLERY_API_KEY -ReleaseNotes $notes -Verbose
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
