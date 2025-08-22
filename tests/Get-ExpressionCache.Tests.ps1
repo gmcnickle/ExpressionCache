@@ -135,6 +135,10 @@ function script:Get-ProviderConfigs {
 
     . $support -ModulePath $psd1Path
     Import-Module $psd1Path -Force
+
+    if (-not (Get-Command Initialize-ExpressionCache -ErrorAction SilentlyContinue)) {
+      throw "Initialize-ExpressionCache not exported. Check PSD1: RootModule/FunctionsToExport."
+    }
   }
 
   BeforeAll {

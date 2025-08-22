@@ -59,14 +59,24 @@ jobs:
           $manifest = Test-ModuleManifest $psd1
           $ver = [version]$manifest.Version
 
-          switch ($env:BUMP_PART) {
+          switch ("${{ env.BUMP_PART }}") {
             'major' { $new = [version]"$($ver.Major + 1).0.0" }
             'minor' { $new = [version]"$($ver.Major).$($ver.Minor + 1).0" }
             default { $new = [version]"$($ver.Major).$($ver.Minor).$($ver.Build + 1)" }
           }
 
           Write-Host "Bumping version $ver -> $new"
-          Update-ModuleManifest -Path $psd1 -ModuleVersion $new
+
+          # Preserve/force critical fields so exports don't disappear
+          $root = if ($manifest.RootModule) { $manifest.RootModule } else { 'ExpressionCache.psm1' }
+          $fx   = if ($manifest.FunctionsToExport -and $manifest.FunctionsToExport.Count) { $manifest.FunctionsToExport } else { '*' }
+
+          Update-ModuleManifest -Path $psd1 `
+            -ModuleVersion $new `
+            -RootModule $root `
+            -FunctionsToExport $fx `
+            -CmdletsToExport @() `
+            -AliasesToExport @()
 
           "newVersion=$new" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
