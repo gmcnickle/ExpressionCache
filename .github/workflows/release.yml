@@ -153,34 +153,43 @@ jobs:
             $notes = "Automated release $env:NEW_VERSION."
           }
 
-          # Resolve module paths & stage if folder name doesn't match module name
-          $psd1 = $env:PSD1_PATH
-          if (-not (Test-Path $psd1)) { throw "Manifest not found at $psd1" }
+          # Safety cap for Gallery/NuGet release notes (multi-line supported)
+          $max = 32000
+          if ($notes.Length -gt $max) {
+            $releaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/v$env:NEW_VERSION"
+            $suffix = "`n`n[...truncated — see full notes: $releaseUrl]"
+            $notes = $notes.Substring(0, $max - $suffix.Length).TrimEnd() + $suffix
+          }
 
-          $manifest    = Test-ModuleManifest $psd1
-          $moduleName  = $manifest.Name
-          if (-not $moduleName) { $moduleName = [IO.Path]::GetFileNameWithoutExtension($psd1) }
-
-          $srcDir      = Split-Path -Parent $psd1   # e.g., 'src'
-          $srcLeaf     = Split-Path -Leaf $srcDir
-
+          # Ensure PowerShellGet is available
           if (-not (Get-Module -ListAvailable PowerShellGet)) {
             Install-Module PowerShellGet -Force -Scope CurrentUser
           }
 
-          if ($srcLeaf -ne $moduleName) {
-            # Stage into a folder named after the module (PowerShellGet requirement)
-            $stageRoot = Join-Path $PWD 'pkg'
-            $moduleDir = Join-Path $stageRoot $moduleName
-            Remove-Item $stageRoot -Recurse -Force -ErrorAction SilentlyContinue
-            New-Item -ItemType Directory -Path $moduleDir -Force | Out-Null
+          # Resolve module paths & stage into <ModuleName>/ as required by Publish-Module
+          $psd1 = $env:PSD1_PATH
+          if (-not (Test-Path $psd1)) { throw "Manifest not found at $psd1" }
+          $manifest   = Test-ModuleManifest $psd1
+          $moduleName = $manifest.Name
+          if (-not $moduleName) { $moduleName = [IO.Path]::GetFileNameWithoutExtension($psd1) }
 
-            Copy-Item -Path (Join-Path $srcDir '*') -Destination $moduleDir -Recurse -Force
-          } else {
-            $moduleDir = $srcDir
-          }
+          $srcDir     = Split-Path -Parent $psd1
+          $stageRoot  = Join-Path $PWD 'pkg'
+          $moduleDir  = Join-Path $stageRoot $moduleName
+          Remove-Item $stageRoot -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $moduleDir -Force | Out-Null
+          Copy-Item -Path (Join-Path $srcDir '*') -Destination $moduleDir -Recurse -Force
 
-          Publish-Module -Path $moduleDir -NuGetApiKey $env:PSGALLERY_API_KEY -ReleaseNotes $notes -Verbose
+          # Force the staged manifest's ReleaseNotes to match $notes (so Gallery shows the right text)
+          $stagedPsd1 = Join-Path $moduleDir (Split-Path -Leaf $psd1)
+          Update-ModuleManifest -Path $stagedPsd1 -ReleaseNotes $notes
+
+          # Optional: sanity print
+          $rn = (Test-ModuleManifest $stagedPsd1).ReleaseNotes
+          Write-Host "ReleaseNotes to publish:`n$rn"
+
+          # Publish from the staged folder (manifest now contains the correct ReleaseNotes)
+          Publish-Module -Path $moduleDir -NuGetApiKey $env:PSGALLERY_API_KEY -Verbose
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
