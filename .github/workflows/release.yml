@@ -87,32 +87,35 @@ jobs:
         run: |
           $ver = "${{ steps.bump.outputs.newVersion }}"
           $pattern = "^##\s+\[?$([regex]::Escape($ver))\]?(.*)$"
+
           if (-not (Test-Path "CHANGELOG.md")) {
             Write-Host "No CHANGELOG.md found; using fallback."
-            "body=" + "Automated release $ver." | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-            exit 0
-          }
-
-          $lines = Get-Content CHANGELOG.md
-          $match = $lines | Select-String -Pattern $pattern | Select-Object -First 1
-          if (-not $match) {
-            Write-Host "No changelog section found for $ver; using fallback."
-            "body=" + "Automated release $ver." | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-            exit 0
-          }
-
-          $startIndex = $match.LineNumber - 1
-          $rest = $lines[$startIndex..($lines.Length-1)]
-          $nextHeader = ($rest | Select-String -Pattern '^##\s+' | Select-Object -Skip 1 -First 1)
-          if ($nextHeader) {
-            $endIndex = $nextHeader.LineNumber - 2
-            $section = $rest[0..$endIndex]
+            $body = "Automated release $ver."
           } else {
-            $section = $rest
+            $lines = Get-Content CHANGELOG.md
+            $match = $lines | Select-String -Pattern $pattern | Select-Object -First 1
+            if (-not $match) {
+              Write-Host "No changelog section found for $ver; using fallback."
+              $body = "Automated release $ver."
+            } else {
+              $startIndex = $match.LineNumber - 1
+              $rest = $lines[$startIndex..($lines.Length-1)]
+              $nextHeader = ($rest | Select-String -Pattern '^##\s+' | Select-Object -Skip 1 -First 1)
+              if ($nextHeader) {
+                $endIndex = $nextHeader.LineNumber - 2
+                $section = $rest[0..$endIndex]
+              } else {
+                $section = $rest
+              }
+              $body = ($section -join "`n").Trim()
+            }
           }
 
-          $body = ($section -join "`n").Trim()
-          "body=$body" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          # Write multi-line output safely
+          $delim = [guid]::NewGuid().ToString('n')
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "body<<$delim"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value $body
+          Add-Content -Path $env:GITHUB_OUTPUT -Value $delim
 
       - name: Commit & tag
         shell: pwsh
