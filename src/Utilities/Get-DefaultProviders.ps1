@@ -3,7 +3,7 @@ function Get-DefaultProviders {
 
     # TODO: Move this to localfilesystem init... (pass appname)
     $defaultCacheFolder =
-    if ($IsWindows) {
+    if ($PSVersionTable.PSEdition -ne 'Core' -or $IsWindows) {
         Join-Path $Env:LOCALAPPDATA "ExpressionCache\$($script:Config.AppName)"
     }
     else {

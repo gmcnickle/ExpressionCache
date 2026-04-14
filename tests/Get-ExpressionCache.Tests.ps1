@@ -381,7 +381,7 @@ function script:Get-ProviderConfigs {
 
   }
 
-  Context 'Thread safety (LocalFileSystemCache)' {
+  Context 'Thread safety (LocalFileSystemCache)' -Skip:($PSVersionTable.PSVersion.Major -lt 7) {
 
     BeforeEach {
       # Each thread test needs a fresh initialized state in the main process

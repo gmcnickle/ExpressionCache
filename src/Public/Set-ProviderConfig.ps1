@@ -10,7 +10,8 @@ function Set-ProviderConfig {
 
   With-WriteLock {
     $Provider.Config = $cloned
-    $Provider.ConfigRevision = 1 + ($Provider.ConfigRevision ?? 0)
+    $rev = if ($null -eq $Provider.ConfigRevision) { 0 } else { $Provider.ConfigRevision }
+    $Provider.ConfigRevision = 1 + $rev
     $Provider.ConfigLastChangedUtc = [DateTime]::UtcNow
   }
 }

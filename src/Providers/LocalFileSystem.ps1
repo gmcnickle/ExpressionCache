@@ -192,7 +192,7 @@ function Get-LocalFileSystem-CachedValue {
         }
 
         # MISS → compute
-        $Arguments = $Arguments ?? @()
+        if ($null -eq $Arguments) { $Arguments = @() }
         $response = & $ScriptBlock @Arguments
 
         if ($null -eq $response) {
@@ -242,7 +242,9 @@ function Write-JsonFileAtomically {
     $maxRetries = 3
     for ($attempt = 0; $attempt -le $maxRetries; $attempt++) {
         try {
-            [IO.File]::Move($tmp, $Path, <# overwrite #> $true)
+            # .NET Framework (PS 5.1) File.Move lacks overwrite param; delete first
+            if ([IO.File]::Exists($Path)) { [IO.File]::Delete($Path) }
+            [IO.File]::Move($tmp, $Path)
             return
         }
         catch [System.IO.IOException], [System.UnauthorizedAccessException] {
