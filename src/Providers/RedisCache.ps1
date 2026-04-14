@@ -1,20 +1,61 @@
-﻿# Providers/RedisCacheProvider.Light.ps1
-
-using namespace System.Net.Sockets
+﻿using namespace System.Net.Sockets
 using namespace System.Text
 
-$Global:debugRedis = $true
-$Global:RedisDebugLog = "$env:LOCALAPPDATA\redis_debug.log"
+
+
+function Initialize-Redis-Cache {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]  $ProviderName,
+
+        [Parameter(Mandatory)]
+        [TimeSpan]$DefaultMaxAge,
+
+        [string]  $HostAddress = '127.0.0.1',
+        [int]     $Port = 6379,
+        [int]     $Database = 2,
+        [string]  $Prefix = 'ExpressionCache:v1',
+        [string]  $Password = '',
+        [bool]    $DeferClientCreation = $true
+    )
+
+    $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
+    if (-not $provider) { 
+        throw "Provider '$ProviderName' not found." 
+    }
+
+    Ensure-ProviderState $provider
+
+    # If already initialized (client created), nothing else to do unless caller will force a recreate later
+    if (Get-ProviderStateValue -Provider $provider -Key 'Initialized') { 
+        return 
+    }
+
+    # Seed state (atomic multi-key patch)
+    Set-ProviderStateValues -Provider $provider -Patch @{
+        Client      = $null
+        Initialized = $false
+        LastError   = $null
+    }
+
+    # Optionally create the client now
+    if (-not $DeferClientCreation) {
+        Ensure-RedisClient -ProviderName $ProviderName
+    }
+}
+
 
 function Write-RedisLog {
     param([string]$msg)
 
-    if (-not $Global:debugRedis) {
+    if ($env:EXPRCACHE_DEBUG_REDIS -ne '1') {
         return
     }
-    
+
+    $logPath = if ($env:EXPRCACHE_REDIS_LOG) { $env:EXPRCACHE_REDIS_LOG } else { "$env:LOCALAPPDATA\redis_debug.log" }
     $timestamp = (Get-Date).ToString("HH:mm:ss.fff")
-    Add-Content -Path $Global:RedisDebugLog -Value "$timestamp - $msg"
+    Add-Content -Path $logPath -Value "$timestamp - $msg"
 }
 
 
@@ -83,55 +124,106 @@ function New-RedisClient {
         return [pscustomobject]$ctx
     }
     catch {
-        # ensure cleanup on failure
-        try { if ($stream) { $stream.Dispose() } } catch {}
-        try { if ($client) { $client.Dispose() } } catch {}
+        try { 
+            if ($stream) { 
+                $stream.Dispose() 
+            } 
+        }
+        catch {
+        }
+
+        try { 
+            if ($client) { 
+                $client.Dispose() 
+            } 
+        }
+        catch {
+        }
+
         throw
     }
 }
 
-# -- Public commands used by provider ----------------------------------------
-
-function Initialize-Redis-Cache {
+function Ensure-RedisClient {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)] 
-        [string]$ProviderName,
-        [Parameter(Mandatory)]
-        [timespan]$DefaultMaxAge,
-        [string]$HostAddress = '127.0.0.1',
-        [int]$Port = 6379,
-        [int]$Database = 2,
-        [string]$Prefix = 'ExpressionCache:v1',
-        [string]$Password = "",
-        [bool]$DeferClientCreation = $true
+        [Parameter(Mandatory)][string]$ProviderName,
+        [int]$WaitSeconds = 10,
+        [switch]$ForceRecreate
     )
 
     $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
-   
-    if (-not $provider) { 
-        throw "Provider '$ProviderName' not found." 
+    Ensure-ProviderState $provider
+
+    # Optional force recreation: dispose & clear under provider write lock
+    if ($ForceRecreate) {
+        With-ProviderLock $provider {
+            $old = Get-ProviderStateValue -Provider $provider -Key 'Client'
+            if ($old -and ($old.PSObject.Methods.Name -contains 'Dispose')) { $old.Dispose() }
+            $provider.State['Client'] = $null
+            $provider.State['Initialized'] = $false
+            $provider.State['LastError'] = $null
+            $provider.State['ClientGen'] = 1 + (Get-ProviderStateValue $provider 'ClientGen' 0)
+        }
     }
 
-    if ($provider.State.Initialized) {
-        # Write-Warning "RedisCache: Provider already initialized."
-        
-        return
+    # Fast path: already initialized
+    $client = Get-ProviderStateValue -Provider $provider -Key 'Client'
+    if ($client -and (Get-ProviderStateValue -Provider $provider -Key 'Initialized')) { return }
+
+    # Single-flight init gate stored in state
+    $gate = Get-ProviderStateValue -Provider $provider -Key '__ClientInitGate'
+    if (-not $gate) {
+        With-ProviderLock $provider {
+            $gate = Get-ProviderStateValue -Provider $provider -Key '__ClientInitGate'
+            if (-not $gate) {
+                $gate = [System.Threading.SemaphoreSlim]::new(1, 1)
+                $provider.State['__ClientInitGate'] = $gate
+            }
+        }
     }
 
-    $state = [PSCustomObject]@{
-        Client   = $null
-        SyncRoot = [object]::new()
+    $ts = [TimeSpan]::FromSeconds([Math]::Max(1, $WaitSeconds))
+    if (-not $gate.Wait($ts)) {
+        throw "Timeout acquiring Redis client init gate for '$ProviderName' after $WaitSeconds seconds."
     }
-    $null = $provider | Set-ECProperty -Name 'State' -Value $state -DontEnforceType
 
-    if (-not $DeferClientCreation) {
-        $client = New-RedisClient -Provider $provider -HostAddress $HostAddress -Port $Port -Database $Database -Password $Password -Prefix $Prefix
-        $provider.State.Client = $client
+    try {
+        # Double-check after acquiring the gate
+        $client = Get-ProviderStateValue -Provider $provider -Key 'Client'
+        if ($client -and (Get-ProviderStateValue -Provider $provider -Key 'Initialized')) { return }
+
+        # Create the client from config
+        # Adjust these two lines to your real factory/command:
+        $paramSet = Build-SplatFromConfig -CommandName 'New-RedisClient' -Config $provider.Config
+        $paramSet['Provider'] = $provider
+        Assert-MandatoryParamsPresent -CommandName 'New-RedisClient' -Splat $paramSet
+        $newClient = New-RedisClient @paramSet
+
+        # Optional: basic health check/ping
+        # if ($newClient.PSObject.Methods.Name -contains 'Ping') { $null = $newClient.Ping() }
+
+        Set-ProviderStateValues -Provider $provider -Patch @{
+            Client           = $newClient
+            Initialized      = $true
+            LastError        = $null
+            ClientCreatedUtc = [DateTime]::UtcNow
+            ClientGen        = 1 + (Get-ProviderStateValue $provider 'ClientGen' 0)
+        }
+    }
+    catch {
+        Set-ProviderStateValues -Provider $provider -Patch @{
+            Initialized = $false
+            LastError   = $_.Exception.Message
+        }
+        throw
+    }
+    finally {
+        $gate.Release() | Out-Null
     }
 }
 
-function Resolve-RedisClient {
+function Get-RedisClient {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -139,68 +231,29 @@ function Resolve-RedisClient {
     )
 
     $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
+    $client = Get-ProviderStateValue -Provider $provider -Key 'Client'
 
-    if (-not $provider) { 
-        throw "Provider '$ProviderName' not found." 
+    if (-not $client) {
+        throw "No Redis client available for provider '$ProviderName'."
     }
 
-    $state  = $provider.State
-    $client = $state.Client
-    $config = $provider.Config
+    return $client
+}
 
-    # Optional: global/env override to disable redis (useful in CI)
-    if ($env:EC_DISABLE_REDIS) { 
-        return $null, $provider 
-    }
+function Use-RedisClient {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProviderName,
 
-    if ($client) { 
-        return $client, $provider 
-    }
+        [Parameter(Mandatory)]
+        [scriptblock]$Body
+    )
 
-    $defer  = ($config -and $config.ContainsKey('DeferClientCreation') -and [bool]$config['DeferClientCreation'])
-    $strict = ($config -and $config.ContainsKey('Strict')              -and [bool]$config['Strict'])
+    Ensure-RedisClient -ProviderName $ProviderName
+    $client = Get-RedisClient -ProviderName $ProviderName
 
-    if (-not $defer) {
-        throw "No Redis client initialized for provider '$ProviderName'."
-    }
-
-    # Provider-scoped sync object to avoid double-create
-    if (-not $state.Sync) { 
-        $state | Set-ECProperty -Name 'Sync' -Value (New-Object object) -DontEnforceType 
-    }
-
-    lock ($state.Sync) {
-        if ($state.Client) { 
-            return $state.Client, $provider 
-        } # someone else won the race
-
-        if (-not $state.ClientCreationAttempted) {
-            $state | Set-ECProperty -Name 'ClientCreationAttempted' -Value $true -DontEnforceType
-
-            try {
-                $newClient = New-RedisClient `
-                    -Host     $config['Host'] `
-                    -Port     $config['Port'] `
-                    -Database $config['Database'] `
-                    -Prefix   $config['Prefix'] `
-                    -Password $config['Password']
-
-                $state | Set-ECProperty -Name 'Client'      -Value $newClient -DontEnforceType
-                $state | Set-ECProperty -Name 'Initialized' -Value $true      -DontEnforceType
-                $state | Set-ECProperty -Name 'LastError'   -Value $null      -DontEnforceType
-            }
-            catch {
-                $state | Set-ECProperty -Name 'LastError'   -Value $_         -DontEnforceType
-                $state | Set-ECProperty -Name 'Initialized' -Value $false     -DontEnforceType
-
-                if ($strict) { 
-                    throw 
-                }
-            }
-        }
-
-        return $state.Client, $provider
-    }
+    & $Body $client
 }
 
 function Get-Redis-CachedValue {
@@ -215,38 +268,43 @@ function Get-Redis-CachedValue {
 
     try {
         Write-RedisLog "=== [ENTRY] Get-Redis-CachedValue ==="
-        $client, $provider = Resolve-RedisClient -ProviderName $ProviderName
-        $rkey = Join-RedisKey -Client $client -Key $Key
+        $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
 
-        $raw = Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('GET', $rkey))
-        # write-host "Redis GET $rkey"
-        if ($null -ne $raw) {
-            if ($Policy.Sliding) {
-                Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('EXPIRE', $rkey, [string]$Policy.TtlSeconds)) | Out-Null
-                Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('EXPIRE', "$rkey:meta", [string]$Policy.TtlSeconds)) | Out-Null
+        Use-RedisClient -ProviderName $ProviderName {
+            param($client)
+
+            $rkey = Join-RedisKey -Client $client -Key $Key
+
+            $raw = Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('GET', $rkey))
+            # write-host "Redis GET $rkey"
+            if ($null -ne $raw) {
+                if ($Policy.Sliding) {
+                    Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('EXPIRE', $rkey, [string]$Policy.TtlSeconds)) | Out-Null
+                    Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('EXPIRE', "$rkey:meta", [string]$Policy.TtlSeconds)) | Out-Null
+                }
+                Write-RedisLog "[CACHE HIT] Key: $rkey"
+                return (Read-CacheValue $raw)
             }
-            Write-RedisLog "[CACHE HIT] Key: $rkey"
-            return (Read-CacheValue $raw)
+
+            Write-RedisLog "[CACHE MISS] Key: $rkey — computing value"
+            if ($null -eq $Arguments) { $Arguments = @() }
+            $result = & $ScriptBlock @Arguments
+            if ($null -eq $result) { return $null }
+
+            $payload = Write-CacheValue -Value $result
+
+            Invoke-RedisRaw -Provider $provider -Context $client `
+                -Arguments ([object[]]@('SET', $rkey, $payload, 'EX', [string]$Policy.TtlSeconds)) | Out-Null
+
+            $desc = ($ScriptBlock.ToString() -split "`r?`n" | ForEach-Object { $_.Trim() }) -join ' '
+            Invoke-RedisRaw -Provider $provider -Context $client `
+                -Arguments ([object[]]@('HSET', "$rkey:meta", 'q', $desc, 'ts', (Get-Date).ToString('o'))) | Out-Null
+            Invoke-RedisRaw -Provider $provider -Context $client `
+                -Arguments ([object[]]@('EXPIRE', "$rkey:meta", [string]$Policy.TtlSeconds)) | Out-Null
+
+            Write-RedisLog "[CACHE STORE] Key: $rkey"
+            return $result
         }
-
-        Write-RedisLog "[CACHE MISS] Key: $rkey — computing value"
-        if ($null -eq $Arguments) { $Arguments = @() }
-        $result = & $ScriptBlock @Arguments
-        if ($null -eq $result) { return $null }
-
-        $payload = Write-CacheValue -Value $result
-
-        Invoke-RedisRaw -Provider $provider -Context $client `
-            -Arguments ([object[]]@('SET', $rkey, $payload, 'EX', [string]$Policy.TtlSeconds)) | Out-Null
-
-        $desc = ($ScriptBlock.ToString() -split "`r?`n" | ForEach-Object { $_.Trim() }) -join ' '
-        Invoke-RedisRaw -Provider $provider -Context $client `
-            -Arguments ([object[]]@('HSET', "$rkey:meta", 'q', $desc, 'ts', (Get-Date).ToString('o'))) | Out-Null
-        Invoke-RedisRaw -Provider $provider -Context $client `
-            -Arguments ([object[]]@('EXPIRE', "$rkey:meta", [string]$Policy.TtlSeconds)) | Out-Null
-
-        Write-RedisLog "[CACHE STORE] Key: $rkey"
-        return $result
     }
     finally {
         Write-RedisLog "=== [EXIT] Get-Redis-CachedValue ==="
@@ -262,49 +320,54 @@ function Clear-Redis-Cache {
 
     try {
         Write-RedisLog "=== [ENTRY] Clear-Redis-Cache ==="
-        $client, $provider = Resolve-RedisClient -ProviderName $ProviderName
-        $pattern = "$($client.Prefix)*"
+        $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
 
-        $cursor = '0'
-        $iterationLimit = 100
-        $iteration = 0
+        Use-RedisClient -ProviderName $ProviderName {
+            param($client)
 
-        do {
-            $resp = Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('SCAN', $cursor, 'MATCH', $pattern, 'COUNT', '1000'))
+            $pattern = "$($client.Prefix)*"
 
-            if ($resp[0] -is [array]) {
-                $nextCursor = [string]$resp[0][0]
-            }
-            else {
-                $nextCursor = [string]$resp[0]
-            }
+            $cursor = '0'
+            $iterationLimit = 100
+            $iteration = 0
 
-            $keys = $resp[1]
+            do {
+                $resp = Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('SCAN', $cursor, 'MATCH', $pattern, 'COUNT', '1000'))
 
-            if ($keys -isnot [array]) { $keys = @($keys) }
-            if ($keys.Count -eq 1 -and $keys[0] -is [array]) { $keys = $keys[0] }
+                if ($resp[0] -is [array]) {
+                    $nextCursor = [string]$resp[0][0]
+                }
+                else {
+                    $nextCursor = [string]$resp[0]
+                }
 
-            $keys = $keys | Where-Object { $_ -ne '0' }
-            Write-RedisLog "[SCAN] Cursor=$cursor -> $nextCursor, KeysReturned=$($keys.Count)"
+                $keys = $resp[1]
 
-            if ($keys.Count -gt 0) {
-                $chunk = $keys -join ', '
-                Write-RedisLog "[UNLINK] Keys: $chunk"
-                $cmd = @('UNLINK') + $keys
-                Invoke-RedisRaw -Provider $provider -Context $client -Arguments $cmd | Out-Null
-            }
+                if ($keys -isnot [array]) { $keys = @($keys) }
+                if ($keys.Count -eq 1 -and $keys[0] -is [array]) { $keys = $keys[0] }
 
-            if ($cursor -eq $nextCursor) {
-                Write-RedisLog "[WARN] Redis SCAN returned same cursor ($cursor), breaking."
-                break
-            }
+                $keys = $keys | Where-Object { $_ -ne '0' }
+                Write-RedisLog "[SCAN] Cursor=$cursor -> $nextCursor, KeysReturned=$($keys.Count)"
 
-            $cursor = $nextCursor
-            $iteration++
-        } while ($cursor -ne '0' -and $iteration -lt $iterationLimit)
+                if ($keys.Count -gt 0) {
+                    $chunk = $keys -join ', '
+                    Write-RedisLog "[UNLINK] Keys: $chunk"
+                    $cmd = @('UNLINK') + $keys
+                    Invoke-RedisRaw -Provider $provider -Context $client -Arguments $cmd | Out-Null
+                }
 
-        if ($iteration -ge $iterationLimit) {
-            Write-RedisLog "[ERROR] SCAN exceeded iteration limit ($iterationLimit)."
+                if ($cursor -eq $nextCursor) {
+                    Write-RedisLog "[WARN] Redis SCAN returned same cursor ($cursor), breaking."
+                    break
+                }
+
+                $cursor = $nextCursor
+                $iteration++
+            } while ($cursor -ne '0' -and $iteration -lt $iterationLimit)
+
+            if ($iteration -ge $iterationLimit) {
+                Write-RedisLog "[ERROR] SCAN exceeded iteration limit ($iterationLimit)."
+            }            
         }
     }
     finally {
@@ -351,9 +414,7 @@ function Invoke-RedisRaw {
     if ($stream.ReadTimeout -eq 0) { $stream.ReadTimeout = 10000 }
     if ($stream.WriteTimeout -eq 0) { $stream.WriteTimeout = 10000 }
 
-    $lockObj = $Provider.State.SyncRoot
-    [System.Threading.Monitor]::Enter($lockObj)
-    try {
+    With-ProviderLock -Provider $provider {
         $ascii = [Text.Encoding]::ASCII
         $utf8 = [Text.Encoding]::UTF8
         $crlf = $ascii.GetBytes("`r`n")
@@ -372,10 +433,8 @@ function Invoke-RedisRaw {
 
         $response = Read-RedisRESP -Stream $stream
         Write-RedisLog "← Redis RESP: $($response | Out-String)"
+
         return $response
-    }
-    finally {
-        [System.Threading.Monitor]::Exit($lockObj)
     }
 }
 
@@ -393,8 +452,14 @@ function Read-Full {
         [int]$Count
     )
 
-    if ($null -eq $Stream) { throw "Stream cannot be null." }
-    if (-not $Stream.CanRead) { throw "Stream is not readable." }
+    if ($null -eq $Stream) { 
+        throw "Stream cannot be null." 
+    }
+
+    if (-not $Stream.CanRead) { 
+        throw "Stream is not readable." 
+    }
+
     if ($Buffer.Length -lt $Count) {
         throw "Buffer is smaller than Count (buffer=$($Buffer.Length), count=$Count)."
     }
@@ -422,7 +487,6 @@ function Read-Full {
     }
     return $Count
 }
-
 
 function Read-RedisLine {
     param([System.IO.Stream]$Stream)
@@ -518,7 +582,6 @@ function Read-RedisRESP {
         }
     }
 }
-
 
 function Write-CacheValue {
     [CmdletBinding()]

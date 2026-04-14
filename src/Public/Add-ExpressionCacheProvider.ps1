@@ -8,8 +8,6 @@ is supplied) eagerly initializes it. The provider spec may be a hashtable or PSC
 It is validated and normalized by Test-ExpressionCacheProviderSpec.
 
 Configuration semantics:
-- One-time merge: if the spec contains InitializeArgs, those values are merged into Config
-  at registration time (via Merge-ExpressionCacheConfig) and then InitializeArgs is removed.
 - No duplicate names: registration fails if a provider with the same Name already exists
   (comparison is case-insensitive).
 - Eager initialization: when the spec includes an Initialize function, it is invoked once
@@ -23,7 +21,6 @@ Expected spec shape (examples below):
 - Initialize (string)      : optional function name to prepare backing store.
 - GetOrCreate (string)     : function name used to fetch/create cached values.
 - ClearCache (string)      : optional function name to clear cache state.
-- InitializeArgs (hashtable, optional) : convenience values that will be merged into Config once.
 
 .PARAMETER Provider
 A provider specification (hashtable/PSCustomObject). Accepts pipeline input.
@@ -45,24 +42,6 @@ Add-ExpressionCacheProvider @{
   Config     = @{
     Prefix      = 'ExpressionCache:v1:MyApp'
     CacheFolder = "$env:TEMP/ExpressionCache"
-  }
-}
-
-.EXAMPLE
-# Register Redis; pass connection details via InitializeArgs (merged into Config once)
-Add-ExpressionCacheProvider @{
-  Key          = 'Redis'
-  Initialize   = 'Initialize-Redis-Cache'
-  GetOrCreate  = 'Get-Redis-CachedValue'
-  ClearCache   = 'Clear-Redis-Cache'
-  Config       = @{
-    Prefix   = 'ExpressionCache:v1:MyApp'
-    Database = 2
-  }
-  InitializeArgs = @{
-    Host     = '127.0.0.1'
-    Port     = 6379
-    Password = $env:EXPRCACHE_REDIS_PASSWORD
   }
 }
 
@@ -99,50 +78,64 @@ function Add-ExpressionCacheProvider {
   )
 
   process {
-    if (-not $script:RegisteredStorageProviders) {
-      $script:RegisteredStorageProviders = [ordered]@{}
-    }
-
-    # Validate/normalize spec (safe to do even under -WhatIf)
+    # 1) Validate/normalize spec (no lock needed)
     $spec = Test-ExpressionCacheProviderSpec -Spec $Provider
-
-    # One-time merge: InitializeArgs -> Config, then drop InitializeArgs
-    if ($spec.PSObject.Properties.Name -contains 'InitializeArgs' -and $spec.InitializeArgs) {
-      $spec.Config = Merge-ExpressionCacheConfig -Base $spec.Config -Overrides $spec.InitializeArgs
-      $null = $spec.PSObject.Properties.Remove('InitializeArgs')
-    }
-
-    # Duplicate check (fail fast, even with -WhatIf)
-    if ($script:RegisteredStorageProviders.Contains($spec.Name)) {
-      throw "ExpressionCache: A provider named '$($spec.Name)' is already registered."
-    }
-
-    $registered = $false
     $target = "Provider '$($spec.Name)'"
+    $registered = $false
 
-    # Register
-    if ($PSCmdlet.ShouldProcess($target, 'Register')) {
-      $script:RegisteredStorageProviders.Add($spec.Name, $spec)
-      $registered = $true
+    # 2) Ensure the registry exists (write-lock, once)
+    if ($null -eq $script:RegisteredStorageProviders) {
+      $script:StateLock.EnterWriteLock()
+      try {
+        if ($null -eq $script:RegisteredStorageProviders) {
+          $script:RegisteredStorageProviders = [ordered]@{}
+        }
+      } 
+      finally { 
+        $script:StateLock.ExitWriteLock() 
+      }
     }
 
-    # Eager initialize (only if we actually registered above)
+    # 3) Atomic "check-then-add" with upgradeable read → write
+    $script:StateLock.EnterUpgradeableReadLock()
+    try {
+      if ($script:RegisteredStorageProviders.Contains($spec.Name)) {`
+        throw "ExpressionCache: A provider named '$($spec.Name)' is already registered."
+      }
+
+      if ($PSCmdlet.ShouldProcess($target, 'Register')) {
+        $script:StateLock.EnterWriteLock()
+        try {
+          # Re-check under the write lock to avoid a race
+          if ($script:RegisteredStorageProviders.Contains($spec.Name)) {
+            throw "ExpressionCache: A provider named '$($spec.Name)' is already registered."
+          }
+          $script:RegisteredStorageProviders[$spec.Name] = $spec
+          $registered = $true
+        } 
+        finally { 
+          $script:StateLock.ExitWriteLock() 
+        }
+      }
+    }
+    finally { 
+      $script:StateLock.ExitUpgradeableReadLock() 
+    }
+
+    # 4) Eager initialize OUTSIDE the registry lock
     if ($registered -and $spec.Initialize) {
       if ($PSCmdlet.ShouldProcess($target, 'Initialize')) {
-        $paramSet = Build-SplatFromConfig -CommandName $spec.Initialize -Config $spec.Config
-        Assert-MandatoryParamsPresent -CommandName $spec.Initialize -Splat $paramSet
-        & $spec.Initialize @paramSet
+        try {
+          $paramSet = Build-SplatFromConfig -CommandName $spec.Initialize -Config $spec.Config
+          Assert-MandatoryParamsPresent -CommandName $spec.Initialize -Splat $paramSet
+          & $spec.Initialize @paramSet
 
-        $state = $provider.State
-        if (-not $state) {
-          $state = [PSCustomObject]@{
-            Initialized = $true
-          }
-          $null = $provider | Set-ECProperty -Name 'State' -Value $state -DontEnforceType
+          Set-ProviderStateValue -Provider $Provider -Key 'Initialized' -Value $true
         } 
-        else {
-          # set by the provider during initialize, just add the Initialized bit.
-          $null = $state | Set-ECProperty -Name "Initialized" -Value $true -DontEnforceType
+        catch {
+          # Optional: record failure for diagnostics (don’t hold the module lock here)
+          Set-ProviderStateValue -Provider $Provider -Key 'InitializationError' -Value $_.Exception.Message
+          throw
         }
       }
     }

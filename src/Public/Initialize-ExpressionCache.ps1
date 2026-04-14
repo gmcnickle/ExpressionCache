@@ -7,12 +7,14 @@ function Initialize-ExpressionCache {
         [switch]$ReplaceProviders
     )
 
-    $script:Config = [pscustomobject]@{
-        AppName = $AppName
-        Version = $Script:moduleData.ModuleVersion
+    With-WriteLock {
+        $script:Config = [ordered]@{
+            AppName = $AppName
+            Version = $Script:moduleData.ModuleVersion
+        }
+    
+        $script:RegisteredStorageProviders = [ordered]@{}
     }
-
-    $script:RegisteredStorageProviders = [ordered]@{}
 
     $defaults = Get-DefaultProviders   # returns [ordered] hashtable
     $merged = Merge-ExpressionCacheProviders -Defaults $defaults -Overrides $Providers -Replace:$ReplaceProviders
@@ -21,6 +23,9 @@ function Initialize-ExpressionCache {
         Add-ExpressionCacheProvider -Provider $merged[$key] | Out-Null
     }
 
-    $script:RegisteredStorageProviders = $merged
+    With-WriteLock {
+        $script:RegisteredStorageProviders = $merged
+    }
+
     return $merged
 }

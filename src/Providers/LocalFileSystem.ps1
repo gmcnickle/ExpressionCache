@@ -1,18 +1,45 @@
-﻿function Clear-LocalFileSystem-Cache {
+﻿function Initialize-LocalFileSystem-Cache {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][string]$ProviderName,
+        [Parameter(Mandatory)]
+        [string]$CacheFolder,
+
+        [Parameter(Mandatory)] 
+        [string]$ProviderName,
+        
+        [Parameter(Mandatory)]
+        [string]$CacheVersion,
+
+        [Parameter(Mandatory)]
+        [timespan]$DefaultMaxAge
+    )
+
+    Test-Directory $CacheFolder
+}
+
+function Clear-LocalFileSystem-Cache {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProviderName,
         [switch]$Force
     )
 
-    $prov = Get-ExpressionCacheProvider -ProviderName $ProviderName
-    $folder = $prov.Config.CacheFolder
+    $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
+    $folder = $provider.Config.CacheFolder
 
-    if ($folder -and (Test-Path -LiteralPath $folder)) {
-        Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
+    if (-not $folder) { 
+        return 
     }
-  
+
+    # Block same-process readers/writers while clearing
+    With-ProviderLock $provider {
+        if (Test-Path -LiteralPath $folder) {
+            Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
+
 
 function Update-LocalFileSystem-Cache {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
@@ -38,71 +65,81 @@ function Update-LocalFileSystem-Cache {
     }
 
     $cacheFile = [IO.Path]::Combine($CacheFolder, "$Key.txt")
-    $cacheDir = Split-Path -Path $cacheFile -Parent
-
-    # Ensure directory exists (gated by ShouldProcess)
-    if (-not (Test-Path -LiteralPath $cacheDir)) {
-        if ($PSCmdlet.ShouldProcess($cacheDir, 'Create cache directory')) {
-            New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
-        }
-    }
 
     if ($PSCmdlet.ShouldProcess($cacheFile, 'Write cache entry')) {
-        $cacheResult = [pscustomobject]@{
+        $payload = [pscustomobject]@{
             Version = $CacheVersion
             Query   = $Query
             Data    = $Data
         }
-        $cacheResult | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $cacheFile -Force
+
+        Write-JsonFileAtomically -Path $cacheFile -Object $payload
     }
 }
 
 function Get-FromLocalFileSystem {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
     param(
-        [Parameter(Mandatory)][string]$Key,
-        [Parameter(Mandatory)][string]$CacheFolder,
-        [Parameter(Mandatory)][string]$CacheVersion,
-        [Parameter(Mandatory)][CachePolicy]$Policy
+        [Parameter(Mandatory)]
+        [string]$Key,
+
+        [Parameter(Mandatory)]
+        [string]$CacheFolder,
+
+        [Parameter(Mandatory)]
+        [string]$CacheVersion,
+
+        [Parameter(Mandatory)]
+        [CachePolicy]$Policy
     )
 
     $cacheFile = [IO.Path]::Combine($CacheFolder, "$Key.txt")
-    if (-not (Test-Path -LiteralPath $cacheFile)) { return $null }
 
-    $item = Get-Item -LiteralPath $cacheFile -Force
-    $lastWriteUtc = $item.LastWriteTimeUtc
-    $nowUtc = (Get-Date).ToUniversalTime()
-
-    $isFresh = switch ($Policy.Mode) {
-        'Absolute' { $nowUtc -le $Policy.ExpireAtUtc }
-        'Sliding' { ($nowUtc - $lastWriteUtc) -le [TimeSpan]::FromSeconds($Policy.TtlSeconds) }
-        default { ($nowUtc - $lastWriteUtc) -le [TimeSpan]::FromSeconds($Policy.TtlSeconds) }
+    if (-not (Test-Path -LiteralPath $cacheFile)) { 
+        return $null 
     }
 
-    if (-not $isFresh) {
-        if ($PSCmdlet.ShouldProcess($cacheFile, "Remove expired cache")) {
-            Remove-Item -LiteralPath $cacheFile -Force -ErrorAction SilentlyContinue
-        }
-        Write-Verbose "ExpressionCache: $cacheFile deleted (expired)."
-        return $null
-    }
-
+    # Avoid TOCTOU by handling races in try/catch
     try {
-        $cacheContent = Get-Content -Raw -LiteralPath $cacheFile | ConvertFrom-Json
-        if ($cacheContent.Version -ne $CacheVersion) {
-            Write-Verbose "LocalFileSystemCache: version mismatch: expected $CacheVersion, got $($cacheContent.Version)"
+        $item = Get-Item -LiteralPath $cacheFile -Force
+        $lastWriteUtc = $item.LastWriteTimeUtc
+        $nowUtc = (Get-Date).ToUniversalTime()
+
+        $isFresh = switch ($Policy.Mode) {
+            'Absolute' { $nowUtc -le $Policy.ExpireAtUtc }
+            'Sliding' { ($nowUtc - $lastWriteUtc) -le [TimeSpan]::FromSeconds($Policy.TtlSeconds) }
+            default { ($nowUtc - $lastWriteUtc) -le [TimeSpan]::FromSeconds($Policy.TtlSeconds) }
+        }
+
+        if (-not $isFresh) {
+            if ($PSCmdlet.ShouldProcess($cacheFile, "Remove expired cache")) {
+                Remove-Item -LiteralPath $cacheFile -Force -ErrorAction SilentlyContinue
+            }
+
             return $null
         }
 
-        # Sliding: refresh 'last write' timestamp on hit
+        $cacheContent = Read-JsonFileWithRetries -Path $cacheFile
+
+        if ($cacheContent.Version -ne $CacheVersion) {
+            Write-Verbose "LocalFileSystemCache: version mismatch: expected $CacheVersion, got $($cacheContent.Version)"
+
+            return $null
+        }
+
         if ($Policy.Sliding) {
-            [IO.File]::SetLastWriteTimeUtc($cacheFile, (Get-Date).ToUniversalTime())
+            try { 
+                [IO.File]::SetLastWriteTimeUtc($cacheFile, (Get-Date).ToUniversalTime()) 
+            }
+            catch { 
+
+            }
         }
 
         return $cacheContent.Data
     }
     catch {
-        Write-Warning "LocalFileSystemCache: failed to read/parse cache file: $cacheFile"
+        Write-Warning "LocalFileSystemCache: failed to read/parse cache file: $cacheFile ($($_.Exception.Message))"
         return $null
     }
 }
@@ -110,63 +147,139 @@ function Get-FromLocalFileSystem {
 function Get-LocalFileSystem-CachedValue {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][string]$Key,
-        [Parameter(Mandatory)][string]$ProviderName,
-        [Parameter(Mandatory)][scriptblock]$ScriptBlock,
+        [Parameter(Mandatory)]
+        [string]$Key,
 
-        [Alias('ArgumentList')]
+        [Parameter(Mandatory)]
+        [string]$ProviderName,
+
+        [Parameter(Mandatory)]
+        [scriptblock]$ScriptBlock,
+
         [object[]]$Arguments,
 
-        [Parameter(Mandatory)][string]$CacheFolder,
-        [Parameter(Mandatory)][CachePolicy]$Policy,   # <- replaces MaximumAge
-
-        [Parameter(Mandatory)][string]$CacheVersion
-    )
-
-    # READ (Policy handles MaxAge/Absolute/Sliding in Get-FromLocalFileSystem)
-    $response = Get-FromLocalFileSystem -Key $Key -CacheFolder $CacheFolder -CacheVersion $CacheVersion -Policy $Policy
-
-    if ($null -ne $response) {
-        Write-Verbose "LocalFileSystemCache: Retrieved from cache: $Key"
-        return $response
-    }
-
-    # MISS → compute
-    $Arguments = if ($Arguments) { $Arguments } else { @() }
-    $response = & $ScriptBlock @Arguments
-
-    if ($null -eq $response) {
-        Write-Verbose "LocalFileSystemCache: Computed null; skipping write for: $Key"
-        return $null
-    }
-
-    # Persist new value (policy is enforced on future reads by Get-FromLocalFileSystem)
-    $desc = ($ScriptBlock.ToString() -split "`r?`n" | ForEach-Object { $_.Trim() }) -join ' '
-    Update-LocalFileSystem-Cache -Key $Key -Data $response -Query $desc -CacheFolder $CacheFolder -CacheVersion $CacheVersion
-
-    return $response
-}
-
-
-function Initialize-LocalFileSystem-Cache {
-    [CmdletBinding()]
-    param(
         [Parameter(Mandatory)]
         [string]$CacheFolder,
 
-        [Parameter(Mandatory)] 
-        [string]$ProviderName,
-        
+        [Parameter(Mandatory)]
+        [CachePolicy]$Policy,
+
         [Parameter(Mandatory)]
         [string]$CacheVersion,
 
-        [Parameter(Mandatory)]
-        [timespan]$DefaultMaxAge
+        [int]$WaitSeconds = 10
     )
 
-    if (-not (Test-Path -LiteralPath $CacheFolder)) {
-        New-Item -ItemType Directory -Path $CacheFolder -Force | Out-Null
+    $response = Get-FromLocalFileSystem -Key $Key -CacheFolder $CacheFolder -CacheVersion $CacheVersion -Policy $Policy
+    if ($null -ne $response) { 
+        Write-Verbose "LocalFileSystemCache: Retrieved from cache: $Key"; return $response 
     }
 
-    $null = Get-ExpressionCacheProvider -ProviderName $ProviderName
+    # Single-flight gate for this key (avoid duplicate compute+writes)
+    $gateKey = "lfs::$CacheFolder::$Key"
+    $gate = Get-KeyGate -Key $gateKey
+    $ts = [TimeSpan]::FromSeconds([Math]::Max(1, $WaitSeconds))
+
+    if (-not $gate.Wait($ts)) { 
+        throw "Timeout acquiring cache gate for '$Key' after $WaitSeconds s." 
+    }
+
+    try {
+        # Re-check after acquiring the gate (another thread may have populated it)
+        $response = Get-FromLocalFileSystem -Key $Key -CacheFolder $CacheFolder -CacheVersion $CacheVersion -Policy $Policy
+        if ($null -ne $response) { 
+            return $response 
+        }
+
+        # MISS → compute
+        $Arguments = $Arguments ?? @()
+        $response = & $ScriptBlock @Arguments
+
+        if ($null -eq $response) {
+            Write-Verbose "LocalFileSystemCache: Computed null; skipping write for: $Key"
+
+            return $null
+        }
+
+        $desc = ($ScriptBlock.ToString() -split "`r?`n" | ForEach-Object { $_.Trim() }) -join ' '
+        Update-LocalFileSystem-Cache -Key $Key -Data $response -Query $desc -CacheFolder $CacheFolder -CacheVersion $CacheVersion
+
+        return $response
+    }
+    finally {
+        $gate.Release() | Out-Null
+    }
+}
+
+function Test-Directory {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    [void][IO.Directory]::CreateDirectory($Path)
+}
+
+# Write JSON atomically: temp -> (replace|move)
+function Write-JsonFileAtomically {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [Parameter(Mandatory)]
+        $Object
+    )
+
+    $dir = Split-Path -Parent $Path
+    Test-Directory $dir
+
+    $json = $Object | ConvertTo-Json -Depth 10
+    $tmp = Join-Path $dir (".tmp_{0}_{1}.json" -f $PID, ([DateTime]::UtcNow.Ticks))
+
+    [IO.File]::WriteAllText($tmp, $json, [Text.UTF8Encoding]::new($false))
+
+    # Atomic overwrite (or create) with retry for cross-process contention
+    $maxRetries = 3
+    for ($attempt = 0; $attempt -le $maxRetries; $attempt++) {
+        try {
+            [IO.File]::Move($tmp, $Path, <# overwrite #> $true)
+            return
+        }
+        catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+            if ($attempt -eq $maxRetries) {
+                throw
+            }
+            [System.Threading.Thread]::Sleep(25 * ($attempt + 1))
+        }
+    }
+}
+
+function Read-JsonFileWithRetries {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [int]$Retries = 3,
+
+        [int]$DelayMs = 25
+    )
+    for ($i = 0; $i -le $Retries; $i++) {
+        try {
+            $raw = [IO.File]::ReadAllText($Path, [Text.UTF8Encoding]::new($false))
+            return $raw | ConvertFrom-Json
+        } 
+        catch [System.IO.FileNotFoundException] {
+            if ($i -eq $Retries) { 
+                throw 
+            }
+            Start-Sleep -Milliseconds $DelayMs
+
+        } 
+        catch [System.IO.IOException] {
+            if ($i -eq $Retries) { 
+                throw 
+            }
+            Start-Sleep -Milliseconds $DelayMs
+        }
+    }
 }

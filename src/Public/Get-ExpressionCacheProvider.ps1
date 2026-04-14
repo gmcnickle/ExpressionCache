@@ -21,12 +21,17 @@ function Get-ExpressionCacheProvider {
         [switch]$NoFallback
     ) 
 
-    if ($script:RegisteredStorageProviders.Contains($ProviderName)) {
-        return $script:RegisteredStorageProviders[$ProviderName]
+    $result = With-ReadLock {
+        if ($ProviderName -and $script:RegisteredStorageProviders.Contains($ProviderName)) {
+            $script:RegisteredStorageProviders[$ProviderName]
+        }
     }
 
-    if ($NoFallback)
-    {
+    if ($null -ne $result) {
+        return $result
+    }
+
+    if ($NoFallback) {
         return
     }
 

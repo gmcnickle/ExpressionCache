@@ -27,7 +27,7 @@ Author = 'Gary McNickle'
 CompanyName = 'RogueCivilian'
 
 # Copyright statement for this module
-Copyright = '© 2025 Gary McNickle. MIT.'
+Copyright = '© 2025-2026 Gary McNickle. MIT.'
 
 # Description of the functionality provided by this module
 Description = 'Lightweight, extensible caching for PowerShell.'
@@ -107,7 +107,7 @@ PrivateData = @{
         # IconUri = ''
 
         # ReleaseNotes of this module
-        ReleaseNotes = 'Added support for a default ProviderName argument when calling Get-ExpressionCache'
+        ReleaseNotes = 'Breaking: providers now use ordered hashtables instead of PSCustomObject. Added InMemoryCache sample, EXPRCACHE_DEFAULT_PROVIDER env override, deferred Redis init. Fixed cache policy TTL bug, improved test isolation.'
 
         # Prerelease string of this module
         Prerelease = 'beta1'

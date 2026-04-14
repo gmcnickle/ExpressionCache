@@ -5,7 +5,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ## [0.2.0] - 2025-08-21
-### Breaking
+### Breaking Changes
 - Changed provider descriptors from `PSCustomObject` to **ordered hashtables**.  
   Providers must now return a hashtable spec.
 

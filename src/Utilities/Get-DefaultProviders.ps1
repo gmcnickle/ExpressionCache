@@ -3,11 +3,12 @@ function Get-DefaultProviders {
 
     # TODO: Move this to localfilesystem init... (pass appname)
     $defaultCacheFolder =
-        if ($IsWindows) {
-            Join-Path $Env:LOCALAPPDATA "ExpressionCache\$($script:Config.AppName)"
-        } else {
-            Join-Path $HOME ".cache/ExpressionCache/$($script:Config.AppName)"
-        }
+    if ($IsWindows) {
+        Join-Path $Env:LOCALAPPDATA "ExpressionCache\$($script:Config.AppName)"
+    }
+    else {
+        Join-Path $HOME ".cache/ExpressionCache/$($script:Config.AppName)"
+    }
 
     # Return an ordered hashtable keyed by short provider key; values are hashtables
     $providers = [ordered]@{
@@ -25,17 +26,17 @@ function Get-DefaultProviders {
             ClearCache  = 'Clear-LocalFileSystem-Cache'   
         }
 
-        Redis = @{
+        Redis                = @{
             # Align Name with key to avoid key/name mismatch downstream
-            Name   = 'Redis'
-            Config = @{
-                ProviderName  = 'Redis'   # used as key/identifier consistently
-                Host          = '127.0.0.1'
-                Port          = 6379
-                Database      = 2
-                Prefix        = "ExpressionCache:v$($Script:moduleData.ModuleVersion.Major):$($script:Config.AppName)"
-                Password      = if ($env:EXPRCACHE_REDIS_PASSWORD) { $env:EXPRCACHE_REDIS_PASSWORD } else { 'ChangeThisPassword!' }
-                DefaultMaxAge = (New-TimeSpan -Days 1)
+            Name        = 'Redis'
+            Config      = @{
+                ProviderName        = 'Redis'   # used as key/identifier consistently
+                Host                = '127.0.0.1'
+                Port                = 6379
+                Database            = 2
+                Prefix              = "ExpressionCache:v$($Script:moduleData.ModuleVersion.Major):$($script:Config.AppName)"
+                Password            = if ($env:EXPRCACHE_REDIS_PASSWORD) { $env:EXPRCACHE_REDIS_PASSWORD } else { 'ChangeThisPassword!' }
+                DefaultMaxAge       = (New-TimeSpan -Days 1)
                 DeferClientCreation = $true
             }
             GetOrCreate = 'Get-Redis-CachedValue'
@@ -44,5 +45,5 @@ function Get-DefaultProviders {
         }
     }
 
-    return $providers
+    return $providers        
 }

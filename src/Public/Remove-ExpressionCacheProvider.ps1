@@ -85,10 +85,12 @@ function Remove-ExpressionCacheProvider {
             }
 
             # Remove this specific instance
-            $script:RegisteredStorageProviders.Remove($ProviderName)
+            With-WriteLock {
+                $script:RegisteredStorageProviders.Remove($ProviderName)
+            }
 
             if ($PassThru) { 
-                $removed += , $prov 
+                $removed += , $provider 
             }
         }
     }

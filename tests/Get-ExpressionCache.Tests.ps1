@@ -282,7 +282,7 @@ function script:Get-ProviderConfigs {
       # Mutate live provider inside module scope
       InModuleScope ExpressionCache -Parameters @{ Name = $ProviderName; Next = $nextVersion } {
         $scopedProvider = Get-ExpressionCacheProvider -ProviderName $Name
-        $scopedProvider.Config | Set-ECProperty -Name 'CacheVersion' -Value $Next
+        $scopedProvider.Config.CacheVersion = $Next
         (Get-ExpressionCacheProvider -ProviderName $Name).Config.CacheVersion | Should -Be $Next
       }
 
@@ -294,7 +294,7 @@ function script:Get-ProviderConfigs {
       finally {
         InModuleScope ExpressionCache -Parameters @{ Name = $ProviderName; Old = $oldVersion } {
           $scopedProvider = Get-ExpressionCacheProvider -ProviderName $Name
-          $scopedProvider.Config | Set-ECProperty -Name 'CacheVersion' -Value $Old
+          $scopedProvider.Config.CacheVersion = $Old
         }
       }
     }
@@ -379,5 +379,129 @@ function script:Get-ProviderConfigs {
     #   (Get-DefaultProviders).LocalFileSystemCache.Config.Prefix | Should -Be $orig
     # }
 
+  }
+
+  Context 'Thread safety (LocalFileSystemCache)' {
+
+    BeforeEach {
+      # Each thread test needs a fresh initialized state in the main process
+      $script:ThreadProvider = ($script:Cases | Where-Object { $_.ProviderName -eq 'LocalFileSystemCache' -and -not $_.SkipReason } | Select-Object -First 1)
+    }
+
+    It 'single-flight: concurrent identical requests all return correct value' {
+      if (-not $script:ThreadProvider) { Set-ItResult -Skipped -Because 'LocalFileSystemCache not available'; return }
+      $Provider = $script:ThreadProvider.Provider
+      $ProviderName = $script:ThreadProvider.ProviderName
+
+      Reset-ProviderState $Provider
+
+      $modulePath = (Get-Module ExpressionCache).Path
+
+      # 8 parallel runspaces all request the same key; each should get 30
+      $results = 1..8 | ForEach-Object -Parallel {
+        $mp = $using:modulePath
+        $pn = $using:ProviderName
+
+        Import-Module $mp -Force
+        Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
+
+        $sb = { param($x, $y) $x + $y }
+        Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments 10, 20
+      } -ThrottleLimit 8
+
+      # All threads should get the correct result
+      $results | Should -HaveCount 8
+      $results | ForEach-Object { $_ | Should -Be 30 }
+    }
+
+    It 'concurrent different keys all succeed without deadlock' {
+      if (-not $script:ThreadProvider) { Set-ItResult -Skipped -Because 'LocalFileSystemCache not available'; return }
+      $Provider = $script:ThreadProvider.Provider
+      $ProviderName = $script:ThreadProvider.ProviderName
+
+      Reset-ProviderState $Provider
+
+      $modulePath = (Get-Module ExpressionCache).Path
+
+      $results = 1..16 | ForEach-Object -Parallel {
+        $mp = $using:modulePath
+        $pn = $using:ProviderName
+        $i  = $_
+
+        Import-Module $mp -Force
+        Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
+
+        $sb = [scriptblock]::Create("param(`$x) `$x * 2")
+        Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments $i
+      } -ThrottleLimit 8
+
+      # Should have 16 results, each being i*2
+      $results | Should -HaveCount 16
+      $sorted = $results | Sort-Object
+      $expected = (1..16 | ForEach-Object { $_ * 2 }) | Sort-Object
+      $sorted | Should -Be $expected
+    }
+
+    It 'concurrent reads after cache is warm return consistent results' {
+      if (-not $script:ThreadProvider) { Set-ItResult -Skipped -Because 'LocalFileSystemCache not available'; return }
+      $Provider = $script:ThreadProvider.Provider
+      $ProviderName = $script:ThreadProvider.ProviderName
+
+      Reset-ProviderState $Provider
+
+      # Warm the cache first (single-threaded, main process is already initialized)
+      $sb = { param($x) $x * 3 }
+      $warmResult = Get-ExpressionCache -ProviderName $ProviderName -ScriptBlock $sb -Arguments 7
+      $warmResult | Should -Be 21
+
+      $modulePath = (Get-Module ExpressionCache).Path
+
+      # Now read it concurrently from multiple runspaces
+      $results = 1..12 | ForEach-Object -Parallel {
+        $mp = $using:modulePath
+        $pn = $using:ProviderName
+
+        Import-Module $mp -Force
+        Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
+
+        $sb = { param($x) $x * 3 }
+        Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments 7
+      } -ThrottleLimit 8
+
+      # All should return the same cached value
+      $results | Should -HaveCount 12
+      $results | ForEach-Object { $_ | Should -Be 21 }
+    }
+
+    It 'concurrent writes to different keys do not corrupt cache files' {
+      if (-not $script:ThreadProvider) { Set-ItResult -Skipped -Because 'LocalFileSystemCache not available'; return }
+      $Provider = $script:ThreadProvider.Provider
+      $ProviderName = $script:ThreadProvider.ProviderName
+
+      Reset-ProviderState $Provider
+
+      $modulePath = (Get-Module ExpressionCache).Path
+
+      # Write 20 distinct keys concurrently
+      $null = 1..20 | ForEach-Object -Parallel {
+        $mp = $using:modulePath
+        $pn = $using:ProviderName
+        $i  = $_
+
+        Import-Module $mp -Force
+        Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
+
+        $sb = [scriptblock]::Create("param(`$n) @{ Id = `$n; Data = 'item' + `$n }")
+        Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments $i
+      } -ThrottleLimit 10
+
+      # Verify each key can be read back correctly (single-threaded)
+      foreach ($i in 1..20) {
+        $sb = [scriptblock]::Create("param(`$n) @{ Id = `$n; Data = 'item' + `$n }")
+        $result = Get-ExpressionCache -ProviderName $ProviderName -ScriptBlock $sb -Arguments $i
+        $result.Id | Should -Be $i
+        $result.Data | Should -Be "item$i"
+      }
+    }
   }
 }

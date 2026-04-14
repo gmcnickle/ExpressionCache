@@ -40,22 +40,21 @@ Designed for **ease of use** — you can cache the results of *any* expression t
 
 ## Table of Contents
 
-- [Install](#-install)
-- [Quick start](#-quick-start)
+- [Install](#install)
+- [Quick start](#quick-start)
 - [Examples](#-examples)
-- [Public API](#-public-api)
-- [Providers](#-providers)
+- [Public API](#public-api)
+- [Providers](#providers)
   - [Provider Object Shape and Initialization](#provider-object-shape-and-initialization)
   - [Provider Function Contracts](#provider-function-contracts)
   - [Writing Executors](#writing-executors)
 - [Tests](#-tests)
-- [Project layout](#-project-layout)
+- [Project layout](#project-layout)
 - [Design highlights](#-design-highlights)
-- [Extensibility](#-extensibility)
-- [Licensing](#-licensing)
-- [Credits](#-credits)
-- [Community & Show and Tell](#-community--show-and-tell)
-- [Connect](#-connect)
+- [Extensibility](#extensibility)
+- [Licensing](#licensing)
+- [Credits](#credits)
+- [Community & Show and Tell](#community--show-and-tell)
 
 ## Install
 
@@ -144,13 +143,24 @@ $userProfile
 
 ## Public API
 
-- `Initialize-ExpressionCache -AppName <string> [-Providers <object[]>]`
-- `Get-ExpressionCache -ScriptBlock <scriptblock> [-Arguments <object[]>] [-Key <string>] [-ProviderName <string>]`
-- `Set-ExpressionCache -Key <string> -Value <object> [-ProviderName <string>]`
-- `Clear-ExpressionCache [-Key <string>] [-ProviderName <string>] [-Force]`
-- `Add-ExpressionCacheProvider -Provider <object>`
+**Core**
+- `Initialize-ExpressionCache -AppName <string> [-Providers <object[]>] [-ReplaceProviders]`
+- `Get-ExpressionCache -ScriptBlock <scriptblock> [-Arguments <object[]>] [-Key <string>] [-ProviderName <string>] [-MaxAge <timespan>]`
+- `Clear-ExpressionCache [-ProviderName <string>] [-Force]`
+- `New-ExpressionCacheKey -ScriptBlock <scriptblock> [-Arguments <object[]>]`
+
+**Provider Management**
+- `Add-ExpressionCacheProvider -ProviderSpec <hashtable>`
 - `Get-ExpressionCacheProvider [-Name <string>]`
 - `Remove-ExpressionCacheProvider -Name <string> [-PassThru]`
+
+**Provider Authoring**
+- `Get-ProviderConfig -Provider <object> [-Raw]`
+- `Set-ProviderConfig -Provider <object> -NewConfig <hashtable>`
+- `Get-ProviderStateValue -Provider <object> [-Key <string>] [-Default <object>]`
+- `Set-ProviderStateValue -Provider <object> -Key <string> -Value <object>`
+- `Set-ProviderStateValues -Provider <object> -Patch <hashtable> [-NonAtomic]`
+- `With-ProviderLock -Provider <object> -Body <scriptblock>`
 
 ## Providers
 
@@ -359,11 +369,11 @@ function Clear-LocalFileSystem-Cache {
 #### Minimal provider object tying it together
 
 ```powershell
-$provider = [pscustomobject]@{
+$provider = [ordered]@{
   Name        = 'LocalFileSystemCache'
   Description = 'Stores cached values in the local file system.'
   Version     = '1.0.0'
-  Config      = [pscustomobject]@{
+  Config      = [ordered]@{
     CacheFolder  = "$env:LOCALAPPDATA\ExpressionCache\MyApp"
     MaximumAge   = (Get-Date).AddDays(-7)
     CacheVersion = '1'
@@ -372,24 +382,6 @@ $provider = [pscustomobject]@{
   Initialize  = 'Initialize-LocalFileSystemCache'
   GetOrCreate = 'Get-LocalFileSystem-CachedValue'
   ClearCache  = 'Clear-LocalFileSystem-Cache'
-}
-Add-ExpressionCacheProvider -Provider $provider
-```
-
-
-```powershell
-$provider = [pscustomobject]@{
-  Name        = 'LocalFileSystemCache'
-  Description = 'Stores cached values in the local file system.'
-  Version     = '1.0.0'
-  Config      = [pscustomobject]@{
-    CacheFolder  = "$env:LOCALAPPDATA\ExpressionCache\MyApp"
-    MaximumAge   = (Get-Date).AddDays(-7)
-    CacheVersion = '1'
-    Initialized  = $false
-  }
-  Initialize  = 'Initialize-LocalFileSystemCache'   # optional
-  GetOrCreate = 'Get-LocalFileSystem-CachedValue'   # required
 }
 Add-ExpressionCacheProvider -Provider $provider
 ```
@@ -475,16 +467,19 @@ The suite covers:
 src/
   ExpressionCache.psd1
   ExpressionCache.psm1
+  Public/
+    *.ps1               # Exported functions
   Providers/
-    FileSystem.ps1
-    Redis.ps1
+    LocalFileSystem.ps1
+    RedisCache.ps1
   Utilities/
     *.ps1
 tests/
-  ExpressionCache.Tests.ps1
-  ExpressionCache.Set-Property.Tests.ps1
+  Add-ExpressionCacheProvider.Tests.ps1
+  Get-ExpressionCache.Tests.ps1
+  Set-ExpressionCacheProperty.Tests.ps1
   support/
-    common.ps1
+    Common.ps1
   run-tests.ps1
 ```
 
@@ -530,34 +525,6 @@ Potential extensions:
 - In-memory cache
 - Cloud-backed (S3, Azure Blob)
 - Database-backed (SQL, SQLite)
-
-
-ExpressionCache is designed to be **provider-agnostic**. You can add new providers for any storage backend with minimal effort:
-
-1. Create a provider object with:
-   - `Name`, `Description`, `Version`  
-   - `Config` (settings like paths, TTL, version tags)  
-   - `GetOrCreate` (required)  
-   - `Initialize` (optional)
-
-2. Register it:
-   ```powershell
-   Add-ExpressionCacheProvider -Provider $myProvider
-   ```
-
-3. Use it with:
-   ```powershell
-   Get-ExpressionCache -ProviderName $myProvider.Name -ScriptBlock { ... }
-   ```
-
-Providers currently included:
-- `LocalFileSystemCache`
-- `RedisCache`
-
-Potential extensions:
-- In-memory cache for short-lived scripts
-- Cloud-backed (S3, Azure Blob, etc.)
-- Database-backed (SQL, SQLite, …)
 
 ## Community & Show and Tell
 
