@@ -10,12 +10,12 @@ $script:RegisteredStorageProviders = @()
 # --- Synchronization primitives (module scope) ---
 # Reader/Writer for script-level maps & provider state/config
 if (-not $script:StateLock) {
-    $script:StateLock = [System.Threading.ReaderWriterLockSlim]::new([System.Threading.LockRecursionPolicy]::NoRecursion)
+    $script:StateLock = New-Object System.Threading.ReaderWriterLockSlim([System.Threading.LockRecursionPolicy]::NoRecursion)
 }
 
 # Per-key single-flight gates for Get-OrCreate
 if (-not $script:KeyLocks) {
-    $script:KeyLocks = [System.Collections.Concurrent.ConcurrentDictionary[string, System.Threading.SemaphoreSlim]]::new()
+    $script:KeyLocks = New-Object 'System.Collections.Concurrent.ConcurrentDictionary[string, System.Threading.SemaphoreSlim]'
 }
 
 function script:Get-KeyGate {
@@ -24,7 +24,7 @@ function script:Get-KeyGate {
         [string]$Key
     )
 
-    $script:KeyLocks.GetOrAdd($Key, { [System.Threading.SemaphoreSlim]::new(1, 1) })
+    $script:KeyLocks.GetOrAdd($Key, { New-Object System.Threading.SemaphoreSlim(1, 1) })
 }
 
 function script:With-ReadLock {

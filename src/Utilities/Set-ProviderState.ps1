@@ -4,7 +4,7 @@ function Set-ProviderState {
         $Provider,
         [Parameter(Mandatory)][hashtable]$NewState
     )
-    $dict = [System.Collections.Concurrent.ConcurrentDictionary[string, object]]::new()
+    $dict = New-Object 'System.Collections.Concurrent.ConcurrentDictionary[string, object]'
     foreach ($k in $NewState.Keys) {
         $null = $dict.TryAdd($k, $NewState[$k])
     }

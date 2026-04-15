@@ -454,12 +454,16 @@ Get-ExpressionCache -Key $key -ScriptBlock { param($id,$state) Get-User $id } -A
 pwsh ./tests/run-tests.ps1
 ```
 
+Tests run on **PowerShell 5.1** and **7.x** via GitHub Actions (Windows + Linux).
+
 The suite covers:
 - cache hits/misses
 - expiry and version invalidation
-- error paths
-- key stability
-- provider reset/cleanup (using `TestDrive:` or Redis prefixes)
+- error paths and key stability
+- thread safety and concurrent access (PS 7+)
+- provider lifecycle (add, remove, config, state)
+- locking semantics and lock release on error
+- provider state management (atomic and non-atomic)
 
 ## Project layout
 
@@ -477,7 +481,12 @@ src/
 tests/
   Add-ExpressionCacheProvider.Tests.ps1
   Get-ExpressionCache.Tests.ps1
-  Set-ExpressionCacheProperty.Tests.ps1
+  Get-ExpressionCacheProvider.Tests.ps1
+  ProviderStateAndConfig.Tests.ps1
+  Remove-ExpressionCacheProvider.Tests.ps1
+  Set-ProviderConfig.Tests.ps1
+  Set-ProviderStateValues.Tests.ps1
+  With-ProviderLock.Tests.ps1
   support/
     Common.ps1
   run-tests.ps1
@@ -488,6 +497,7 @@ tests/
 - **Ease of use:** cache results from any expression with minimal config.  
 - **Single source of truth:** provider settings live in `Config`.  
 - **Explicit execution:** call sites pass a scriptblock; providers choose how to cache.  
+- **Thread-safe:** ReaderWriterLockSlim for provider state, per-key SemaphoreSlim gates for single-flight cache operations.  
 - **Safety:** avoids `Invoke-Expression`; favors parameters over ambient variables.  
 - **Extensible:** add providers (Redis, S3, memory, …) by implementing `GetOrCreate`.
 

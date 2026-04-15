@@ -30,7 +30,7 @@ function Build-CallableSplat {
 
     if (-not $script:__ParamCache.ContainsKey($CommandName)) {
         $cmd = Get-Command -Name $CommandName -CommandType Function, Cmdlet, ExternalScript -ErrorAction Stop
-        $names = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        $names = New-Object 'System.Collections.Generic.HashSet[string]'([StringComparer]::OrdinalIgnoreCase)
         $aliasMap = @{}  # alias -> canonical
         foreach ($p in $cmd.Parameters.Values) {
             $null = $names.Add($p.Name)

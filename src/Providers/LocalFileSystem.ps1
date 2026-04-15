@@ -236,7 +236,7 @@ function Write-JsonFileAtomically {
     $json = $Object | ConvertTo-Json -Depth 10
     $tmp = Join-Path $dir (".tmp_{0}_{1}.json" -f $PID, ([DateTime]::UtcNow.Ticks))
 
-    [IO.File]::WriteAllText($tmp, $json, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding($false)))
 
     # Atomic overwrite (or create) with retry for cross-process contention
     $maxRetries = 3
@@ -267,7 +267,7 @@ function Read-JsonFileWithRetries {
     )
     for ($i = 0; $i -le $Retries; $i++) {
         try {
-            $raw = [IO.File]::ReadAllText($Path, [Text.UTF8Encoding]::new($false))
+            $raw = [IO.File]::ReadAllText($Path, (New-Object Text.UTF8Encoding($false)))
             return $raw | ConvertFrom-Json
         } 
         catch [System.IO.FileNotFoundException] {

@@ -93,7 +93,7 @@ function New-RedisClient {
     $client = $null
     $stream = $null
     try {
-        $client = [System.Net.Sockets.TcpClient]::new()
+        $client = New-Object System.Net.Sockets.TcpClient
         $client.NoDelay = $true
         $client.Connect($HostAddress, $Port)
         $stream = $client.GetStream()
@@ -177,7 +177,7 @@ function Ensure-RedisClient {
         With-ProviderLock $provider {
             $gate = Get-ProviderStateValue -Provider $provider -Key '__ClientInitGate'
             if (-not $gate) {
-                $gate = [System.Threading.SemaphoreSlim]::new(1, 1)
+                $gate = New-Object System.Threading.SemaphoreSlim(1, 1)
                 $provider.State['__ClientInitGate'] = $gate
             }
         }
@@ -632,9 +632,9 @@ function Read-CacheValue {
     $data = $env.data
     if ($env.enc -eq 'gzip+base64') {
         $bytes = [Convert]::FromBase64String($data)
-        $msIn = [System.IO.MemoryStream]::new($bytes, $false)
-        $gzip = [System.IO.Compression.GZipStream]::new($msIn, [IO.Compression.CompressionMode]::Decompress)
-        $msOut = [System.IO.MemoryStream]::new()
+        $msIn = New-Object System.IO.MemoryStream($bytes, $false)
+        $gzip = New-Object System.IO.Compression.GZipStream($msIn, ([IO.Compression.CompressionMode]::Decompress))
+        $msOut = New-Object System.IO.MemoryStream
         $buf = New-Object byte[] 8192; while (($n = $gzip.Read($buf, 0, $buf.Length)) -gt 0) { $msOut.Write($buf, 0, $n) }
         $gzip.Dispose(); $msIn.Dispose()
         $data = [Text.Encoding]::UTF8.GetString($msOut.ToArray()); $msOut.Dispose()
