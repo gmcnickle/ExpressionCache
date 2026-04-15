@@ -57,7 +57,9 @@ function Update-LocalFileSystem-Cache {
         [string]$CacheFolder,
 
         [Parameter(Mandatory)]
-        [string]$CacheVersion
+        [string]$CacheVersion,
+
+        [int]$JsonDepth = 10
     )
 
     if ($null -eq $Data -or (($Data -is [System.Collections.ICollection]) -and $Data.Count -eq 0)) { 
@@ -73,7 +75,7 @@ function Update-LocalFileSystem-Cache {
             Data    = $Data
         }
 
-        Write-JsonFileAtomically -Path $cacheFile -Object $payload
+        Write-JsonFileAtomically -Path $cacheFile -Object $payload -JsonDepth $JsonDepth
     }
 }
 
@@ -167,7 +169,9 @@ function Get-LocalFileSystem-CachedValue {
         [Parameter(Mandatory)]
         [string]$CacheVersion,
 
-        [int]$WaitSeconds = 10
+        [int]$WaitSeconds = 10,
+
+        [int]$JsonDepth = 10
     )
 
     $response = Get-FromLocalFileSystem -Key $Key -CacheFolder $CacheFolder -CacheVersion $CacheVersion -Policy $Policy
@@ -202,7 +206,7 @@ function Get-LocalFileSystem-CachedValue {
         }
 
         $desc = ($ScriptBlock.ToString() -split "`r?`n" | ForEach-Object { $_.Trim() }) -join ' '
-        Update-LocalFileSystem-Cache -Key $Key -Data $response -Query $desc -CacheFolder $CacheFolder -CacheVersion $CacheVersion
+        Update-LocalFileSystem-Cache -Key $Key -Data $response -Query $desc -CacheFolder $CacheFolder -CacheVersion $CacheVersion -JsonDepth $JsonDepth
 
         return $response
     }
@@ -227,13 +231,18 @@ function Write-JsonFileAtomically {
         [string]$Path,
 
         [Parameter(Mandatory)]
-        $Object
+        $Object,
+
+        [int]$JsonDepth = 10
     )
 
     $dir = Split-Path -Parent $Path
     Test-Directory $dir
 
-    $json = $Object | ConvertTo-Json -Depth 10
+    $json = $Object | ConvertTo-Json -Depth $JsonDepth
+    if ($json -match '"System\.[^"]+"') {
+        Write-Warning "ExpressionCache: ConvertTo-Json may have truncated objects at depth $JsonDepth. Consider increasing JsonDepth in provider config."
+    }
     $tmp = Join-Path $dir (".tmp_{0}_{1}.json" -f $PID, ([DateTime]::UtcNow.Ticks))
 
     [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding($false)))
@@ -249,6 +258,10 @@ function Write-JsonFileAtomically {
         }
         catch [System.IO.IOException], [System.UnauthorizedAccessException] {
             if ($attempt -eq $maxRetries) {
+                # Clean up orphaned temp file before re-throwing
+                if ([IO.File]::Exists($tmp)) {
+                    try { [IO.File]::Delete($tmp) } catch { }
+                }
                 throw
             }
             [System.Threading.Thread]::Sleep(25 * ($attempt + 1))

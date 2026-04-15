@@ -20,6 +20,7 @@ function Get-DefaultProviders {
                 CacheVersion  = 1
                 CacheFolder   = $defaultCacheFolder
                 DefaultMaxAge = (New-TimeSpan -Days 1)
+                JsonDepth     = 10
             }
             GetOrCreate = 'Get-LocalFileSystem-CachedValue'
             Initialize  = 'Initialize-LocalFileSystem-Cache'

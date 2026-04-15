@@ -601,6 +601,9 @@ function Write-CacheValue {
     $fmt = 'json'
     try {
         $data = ConvertTo-Json -InputObject $Value -Compress -Depth $JsonDepth
+        if ($data -match '"System\.[^"]+"') {
+            Write-Warning "ExpressionCache: ConvertTo-Json may have truncated objects at depth $JsonDepth. Consider increasing JsonDepth in provider config."
+        }
     }
     catch {
         $fmt = 'clixml'
