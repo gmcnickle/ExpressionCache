@@ -71,14 +71,20 @@ function Invoke-ParallelRunspace {
     $runspacePool.Open()
     $runspaces = @()
 
+    # Convert scriptblock to string so it can be re-created in each runspace
+    # (scriptblock objects cannot cross runspace boundaries in PS 5.1)
+    $scriptText = $ScriptBlock.ToString()
+
     for ($i = 0; $i -lt $InputObject.Count; $i++) {
-        $input = $InputObject[$i]
+        $currentItem = $InputObject[$i]
         $ps = [powershell]::Create()
         $ps.RunspacePool = $runspacePool
-        $null = $ps.AddScript({
-            param($item, $args, $sb)
-            & $sb $item @args
-        }).AddArgument($input).AddArgument($ArgumentList).AddArgument($ScriptBlock)
+        $null = $ps.AddScript($scriptText).AddArgument($currentItem)
+        if ($ArgumentList) {
+            foreach ($arg in $ArgumentList) {
+                $null = $ps.AddArgument($arg)
+            }
+        }
         $runspaces += [PSCustomObject]@{
             Index = $i
             PowerShell = $ps
@@ -90,6 +96,9 @@ function Invoke-ParallelRunspace {
     foreach ($r in $runspaces) {
         try {
             $output = $r.PowerShell.EndInvoke($r.AsyncResult)
+            if ($r.PowerShell.Streams.Error.Count -gt 0) {
+                throw $r.PowerShell.Streams.Error[0].Exception
+            }
             $results[$r.Index] = $output
         } finally {
             $r.PowerShell.Dispose()
