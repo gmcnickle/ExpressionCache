@@ -7,7 +7,7 @@ function Merge-ExpressionCacheProviders {
     )
 
     if ($Replace -or -not $Defaults -or $Defaults.Count -eq 0) {
-        return Validate-ExpressionCacheProviders -Providers $Overrides
+        return Confirm-ExpressionCacheProviders -Providers $Overrides
     }
 
     # Start with a copy of the defaults (ordered)
@@ -32,5 +32,5 @@ function Merge-ExpressionCacheProviders {
         }
     }
 
-    return Validate-ExpressionCacheProviders -Providers $merged
+    return Confirm-ExpressionCacheProviders -Providers $merged
 }

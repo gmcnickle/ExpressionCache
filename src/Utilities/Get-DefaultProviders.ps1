@@ -1,7 +1,6 @@
 function Get-DefaultProviders {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Intentional plural for clarity: returns multiple providers.')]
 
-    # TODO: Move this to localfilesystem init... (pass appname)
     $defaultCacheFolder =
     if ($PSVersionTable.PSEdition -ne 'Core' -or $IsWindows) {
         Join-Path $Env:LOCALAPPDATA "ExpressionCache\$($script:Config.AppName)"
@@ -32,11 +31,11 @@ function Get-DefaultProviders {
             Name        = 'Redis'
             Config      = @{
                 ProviderName        = 'Redis'   # used as key/identifier consistently
-                Host                = '127.0.0.1'
+                HostAddress         = '127.0.0.1'
                 Port                = 6379
                 Database            = 2
                 Prefix              = "ExpressionCache:v$($Script:moduleData.ModuleVersion.Major):$($script:Config.AppName)"
-                Password            = if ($env:EXPRCACHE_REDIS_PASSWORD) { $env:EXPRCACHE_REDIS_PASSWORD } else { 'ChangeThisPassword!' }
+                Password            = if ($env:EXPRCACHE_REDIS_PASSWORD) { $env:EXPRCACHE_REDIS_PASSWORD } else { '' }
                 DefaultMaxAge       = (New-TimeSpan -Days 1)
                 DeferClientCreation = $true
             }

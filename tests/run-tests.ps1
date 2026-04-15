@@ -7,8 +7,10 @@ param(
 Remove-Module Pester -ErrorAction SilentlyContinue
 Import-Module Pester -MinimumVersion 5.3 -Force
 
+
+# Suppress only the 'unapproved verbs' warning during import
 Remove-Module ExpressionCache -ErrorAction SilentlyContinue
-Import-Module "$PSScriptRoot/../src/ExpressionCache.psd1" -Force   # or: "$PSScriptRoot/.."
+Import-Module "$PSScriptRoot/../src/ExpressionCache.psd1" -Force 
 
 # Build a Pester v5 config and use ONLY -Configuration
 $conf = [PesterConfiguration]::Default #New-PesterConfiguration

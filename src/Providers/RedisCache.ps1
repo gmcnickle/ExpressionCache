@@ -41,7 +41,7 @@ function Initialize-Redis-Cache {
 
     # Optionally create the client now
     if (-not $DeferClientCreation) {
-        Ensure-RedisClient -ProviderName $ProviderName
+        $null = Get-RedisClient -ProviderName $ProviderName
     }
 }
 
@@ -144,7 +144,7 @@ function New-RedisClient {
     }
 }
 
-function Ensure-RedisClient {
+function Get-RedisClient {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$ProviderName,
@@ -223,23 +223,6 @@ function Ensure-RedisClient {
     }
 }
 
-function Get-RedisClient {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$ProviderName
-    )
-
-    $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
-    $client = Get-ProviderStateValue -Provider $provider -Key 'Client'
-
-    if (-not $client) {
-        throw "No Redis client available for provider '$ProviderName'."
-    }
-
-    return $client
-}
-
 function Use-RedisClient {
     [CmdletBinding()]
     param(
@@ -250,8 +233,13 @@ function Use-RedisClient {
         [scriptblock]$Body
     )
 
-    Ensure-RedisClient -ProviderName $ProviderName
-    $client = Get-RedisClient -ProviderName $ProviderName
+    $null = Get-RedisClient -ProviderName $ProviderName
+    $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
+    $client = Get-ProviderStateValue -Provider $provider -Key 'Client'
+
+    if (-not $client) {
+        throw "No Redis client available for provider '$ProviderName'."
+    }
 
     & $Body $client
 }

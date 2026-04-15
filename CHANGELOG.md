@@ -4,6 +4,29 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-15
+### Breaking Changes
+- Redis provider: config key renamed from `Host` to `HostAddress` to match the `New-RedisClient` parameter name.
+- Redis provider: default password changed from `'ChangeThisPassword!'` to `''` (empty). Set `$env:EXPRCACHE_REDIS_PASSWORD` or pass `Password` explicitly in config.
+
+### Added
+- **Thread safety**: `ReaderWriterLockSlim` for provider state, per-key `SemaphoreSlim` gates for single-flight cache operations.
+- **PowerShell 5.1 compatibility**: replaced all `[type]::new()` calls with `New-Object`; added `Invoke-ParallelRunspace` helper for PS 5.1 concurrent tests.
+- **Test coverage**: added test suites for `Get-ExpressionCacheProvider`, `Remove-ExpressionCacheProvider`, `Set-ProviderConfig`, `Set-ProviderStateValues`, `With-ProviderLock`, and `ProviderStateAndConfig` (6 new test files, 57 total tests).
+- **Redis test infrastructure**: auto-detection of Redis via Docker or local `redis-cli`, isolated test prefix per run, skip logic for environments without Redis.
+- Configurable `JsonDepth` with truncation warnings for deep object graphs.
+
+### Fixed
+- Redis provider: removed duplicate `Get-RedisClient` function that shadowed the client initializer (caused by `Ensure-RedisClient` rename collision).
+- Redis provider: fixed `Use-RedisClient` leaking the client object into the pipeline.
+- Redis provider: suppressed unwanted output from lazy client initialization.
+- `Initialize-ExpressionCache`: fixed output leaking to pipeline.
+- Naming inconsistencies across module (standardized to PowerShell approved verbs where possible).
+- Temp file cleanup in `LocalFileSystem` provider.
+
+### Changed
+- Redis provider documentation rewritten to accurately reflect capabilities (native RESP protocol, thread-safe init, sliding TTL, SCAN-based clearing, envelope serialization with gzip).
+
 ## [0.2.0] - 2025-08-21
 ### Breaking Changes
 - Changed provider descriptors from `PSCustomObject` to **ordered hashtables**.  

@@ -42,11 +42,35 @@ Describe 'ExpressionCache :: Providers' {
     return $result["prefix"]
   }
 
+
   function script:Get-RedisEnabled {
-    # Enable only if: Linux runner AND not explicitly skipped AND password provided
-    if (-not $IsLinux) { return $false }
-    if ($env:EXPRCACHE_SKIP_REDIS -eq '1') { return $false }
-    if ([string]::IsNullOrWhiteSpace($env:EXPRCACHE_REDIS_PASSWORD)) { return $false }
+    # Try docker exec first
+    $redisAvailable = $false
+    try {
+      $dockerPing = & docker exec redis redis-cli ping 2>$null
+      if ($dockerPing -eq 'PONG') { $redisAvailable = $true }
+      else { Write-Host "[RedisTest] docker exec redis redis-cli ping: $dockerPing" }
+    } catch { Write-Host "[RedisTest] docker exec failed: $($_.Exception.Message)" }
+
+    # If not available via docker, try direct redis-cli
+    if (-not $redisAvailable) {
+      try {
+        $cliPing = & redis-cli ping 2>$null
+        if ($cliPing -eq 'PONG') { $redisAvailable = $true }
+        else { Write-Host "[RedisTest] redis-cli ping: $cliPing" }
+      } catch { Write-Host "[RedisTest] redis-cli failed: $($_.Exception.Message)" }
+    }
+
+    if (-not $redisAvailable) {
+      Write-Host "[RedisTest] Skipping: Redis is not reachable via docker or redis-cli."
+      return $false
+    }
+    if ($env:EXPRCACHE_SKIP_REDIS -eq '1') {
+      Write-Host "[RedisTest] Skipping: EXPRCACHE_SKIP_REDIS=1."
+      return $false
+    }
+    # Allow empty password (default local Redis has no password)
+    Write-Host "[RedisTest] Redis is available and tests will run."
     return $true
   }
 
@@ -359,30 +383,10 @@ function script:Get-ProviderConfigs {
       { Get-ExpressionCache -ProviderName $name -ScriptBlock { 1 } } | Should -Throw '*Provider*not registered*'
     }
 
-    # TODO: Decide how to expose Merge-ExpressionCacheConfig...
-    # It 'overlays only specified keys, preserves others' {
-    #   $base = [pscustomobject]@{ Prefix = 'default:'; CacheVersion = 1 }
-    #   $ovr = @{ Prefix = 'custom:' }
-    #   Merge-ExpressionCacheConfig -Base $base -Overrides $ovr | Out-Null
-    #   $base.Prefix       | Should -Be 'custom:'
-    #   $base.CacheVersion | Should -Be 1
-    # }
-
-    # TODO: Decide how to expose Get-DefaultProviders...
-    # It 'does not mutate defaults inside Initialize-ExpressionCache' {
-    #   $defaults = Get-DefaultProviders
-    #   $orig = $defaults.LocalFileSystemCache.Config.Prefix
-
-    #   Initialize-ExpressionCache -AppName X -Providers @(
-    #     @{ Name = 'LocalFileSystemCache'; Config = @{ Prefix = 't:' } }
-    #   ) | Out-Null
-
-    #   (Get-DefaultProviders).LocalFileSystemCache.Config.Prefix | Should -Be $orig
-    # }
 
   }
 
-  Context 'Thread safety (LocalFileSystemCache)' -Skip:($PSVersionTable.PSVersion.Major -lt 7) {
+  Context 'Thread safety (LocalFileSystemCache)' {
 
     BeforeEach {
       # Each thread test needs a fresh initialized state in the main process
@@ -399,16 +403,25 @@ function script:Get-ProviderConfigs {
       $modulePath = (Get-Module ExpressionCache).Path
 
       # 8 parallel runspaces all request the same key; each should get 30
-      $results = 1..8 | ForEach-Object -Parallel {
-        $mp = $using:modulePath
-        $pn = $using:ProviderName
 
-        Import-Module $mp -Force
-        Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
-
-        $sb = { param($x, $y) $x + $y }
-        Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments 10, 20
-      } -ThrottleLimit 8
+      if ($PSVersionTable.PSVersion.Major -ge 7) {
+        $results = 1..8 | ForEach-Object -Parallel {
+          $mp = $using:modulePath
+          $pn = $using:ProviderName
+          Import-Module $mp -Force
+          Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
+          $sb = { param($x, $y) $x + $y }
+          Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments 10, 20
+        } -ThrottleLimit 8
+      } else {
+        $results = Invoke-ParallelRunspace -InputObject (1..8) -ThrottleLimit 8 -ScriptBlock {
+          param($i)
+          Import-Module $using:modulePath -Force
+          Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
+          $sb = { param($x, $y) $x + $y }
+          Get-ExpressionCache -ProviderName $using:ProviderName -ScriptBlock $sb -Arguments 10, 20
+        }
+      }
 
       # All threads should get the correct result
       $results | Should -HaveCount 8
@@ -424,17 +437,26 @@ function script:Get-ProviderConfigs {
 
       $modulePath = (Get-Module ExpressionCache).Path
 
-      $results = 1..16 | ForEach-Object -Parallel {
-        $mp = $using:modulePath
-        $pn = $using:ProviderName
-        $i  = $_
 
-        Import-Module $mp -Force
-        Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
-
-        $sb = [scriptblock]::Create("param(`$x) `$x * 2")
-        Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments $i
-      } -ThrottleLimit 8
+      if ($PSVersionTable.PSVersion.Major -ge 7) {
+        $results = 1..16 | ForEach-Object -Parallel {
+          $mp = $using:modulePath
+          $pn = $using:ProviderName
+          $i  = $_
+          Import-Module $mp -Force
+          Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
+          $sb = [scriptblock]::Create("param(`$x) `$x * 2")
+          Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments $i
+        } -ThrottleLimit 8
+      } else {
+        $results = Invoke-ParallelRunspace -InputObject (1..16) -ThrottleLimit 8 -ScriptBlock {
+          param($i)
+          Import-Module $using:modulePath -Force
+          Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
+          $sb = [scriptblock]::Create("param(`$x) `$x * 2")
+          Get-ExpressionCache -ProviderName $using:ProviderName -ScriptBlock $sb -Arguments $i
+        }
+      }
 
       # Should have 16 results, each being i*2
       $results | Should -HaveCount 16
@@ -458,16 +480,25 @@ function script:Get-ProviderConfigs {
       $modulePath = (Get-Module ExpressionCache).Path
 
       # Now read it concurrently from multiple runspaces
-      $results = 1..12 | ForEach-Object -Parallel {
-        $mp = $using:modulePath
-        $pn = $using:ProviderName
 
-        Import-Module $mp -Force
-        Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
-
-        $sb = { param($x) $x * 3 }
-        Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments 7
-      } -ThrottleLimit 8
+      if ($PSVersionTable.PSVersion.Major -ge 7) {
+        $results = 1..12 | ForEach-Object -Parallel {
+          $mp = $using:modulePath
+          $pn = $using:ProviderName
+          Import-Module $mp -Force
+          Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
+          $sb = { param($x) $x * 3 }
+          Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments 7
+        } -ThrottleLimit 8
+      } else {
+        $results = Invoke-ParallelRunspace -InputObject (1..12) -ThrottleLimit 8 -ScriptBlock {
+          param($i)
+          Import-Module $using:modulePath -Force
+          Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
+          $sb = { param($x) $x * 3 }
+          Get-ExpressionCache -ProviderName $using:ProviderName -ScriptBlock $sb -Arguments 7
+        }
+      }
 
       # All should return the same cached value
       $results | Should -HaveCount 12
@@ -484,17 +515,26 @@ function script:Get-ProviderConfigs {
       $modulePath = (Get-Module ExpressionCache).Path
 
       # Write 20 distinct keys concurrently
-      $null = 1..20 | ForEach-Object -Parallel {
-        $mp = $using:modulePath
-        $pn = $using:ProviderName
-        $i  = $_
 
-        Import-Module $mp -Force
-        Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
-
-        $sb = [scriptblock]::Create("param(`$n) @{ Id = `$n; Data = 'item' + `$n }")
-        Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments $i
-      } -ThrottleLimit 10
+      if ($PSVersionTable.PSVersion.Major -ge 7) {
+        $null = 1..20 | ForEach-Object -Parallel {
+          $mp = $using:modulePath
+          $pn = $using:ProviderName
+          $i  = $_
+          Import-Module $mp -Force
+          Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
+          $sb = [scriptblock]::Create("param(`$n) @{ Id = `$n; Data = 'item' + `$n }")
+          Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments $i
+        } -ThrottleLimit 10
+      } else {
+        $null = Invoke-ParallelRunspace -InputObject (1..20) -ThrottleLimit 10 -ScriptBlock {
+          param($i)
+          Import-Module $using:modulePath -Force
+          Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
+          $sb = [scriptblock]::Create("param(`$n) @{ Id = `$n; Data = 'item' + `$n }")
+          Get-ExpressionCache -ProviderName $using:ProviderName -ScriptBlock $sb -Arguments $i
+        }
+      }
 
       # Verify each key can be read back correctly (single-threaded)
       foreach ($i in 1..20) {

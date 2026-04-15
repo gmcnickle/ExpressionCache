@@ -220,10 +220,27 @@ Initialize-LocalFileSystemCache -CacheFolder 'C:\Temp\cache' -MaximumAge <dateti
 
 #### Example: Redis Provider
 
+The included Redis provider is a fully functional, dependency-free implementation built on raw TCP sockets and the RESP protocol. It serves as both a **working provider** for single-instance Redis and a **reference implementation** for building complex providers.
+
+What it includes:
+- Native RESP protocol client (no external modules required)
+- Lazy, thread-safe client initialization with single-flight gating
+- TTL-based expiration with sliding expiry support
+- Per-key metadata tracking (query description + timestamp)
+- Envelope-based serialization (JSON with CliXml fallback, gzip for large payloads)
+- `SCAN`-based cache clearing (production-safe, no `KEYS *`)
+- Optional `AUTH` and `SELECT` for password-protected and multi-database setups
+- Debug logging via `$env:EXPRCACHE_DEBUG_REDIS`
+
+What it intentionally omits (and where a production-grade provider might extend):
+- Connection pooling or automatic reconnect
+- Command pipelining/batching
+- Cluster, Sentinel, or replica support
+
 ```powershell
 function Initialize-RedisCache {
     param(
-        [string]$Host,
+        [string]$HostAddress,
         [int]$Port,
         [string]$Password
     )
@@ -231,21 +248,21 @@ function Initialize-RedisCache {
 }
 ```
 
-Provider object:
+Provider config overrides (merged with defaults):
 
 ```powershell
 @{
-    Name   = 'redis-default'
-    Type   = 'RedisCache'
+    Name   = 'Redis'
     Config = @{
-        Host     = 'localhost'
-        Port     = 6379
-        Password = 'ChangeThisPassword!'
+        HostAddress = '127.0.0.1'
+        Port        = 6379
+        Database    = 2
+        Password    = ''   # set $env:EXPRCACHE_REDIS_PASSWORD or pass explicitly
     }
 }
 ```
 
-> The Redis cache implementation provided is pretty bare-bones, and was provided more as an example of implementing a complex provider.
+> The Redis provider is designed as a reference implementation that demonstrates the full provider contract. It is suitable for development and single-instance Redis deployments. For high-availability or clustered Redis, consider building a provider on top of a dedicated Redis client library.
 
 #### Notes for Provider Authors
 
@@ -388,7 +405,7 @@ Add-ExpressionCacheProvider -Provider $provider
 
 Providers included today:
 - **LocalFileSystemCache** – simple file-based persistence.
-- **RedisCache** – remote/shared cache using Redis.
+- **RedisCache** – dependency-free Redis provider with native RESP protocol support, suitable for single-instance deployments and as a reference for building custom remote providers.
 
 ### Writing Executors
 
@@ -528,11 +545,11 @@ Get-ExpressionCache -ProviderName $myProvider.Name -ScriptBlock { ... }
 ```
 
 Providers included:
-- LocalFileSystemCache
-- RedisCache
+- **LocalFileSystemCache** – file-based, zero dependencies
+- **RedisCache** – native RESP protocol, zero dependencies, reference implementation for remote/shared caching
 
 Potential extensions:
-- In-memory cache
+- In-memory cache (see `samples/implementing-yourown-provider/`)
 - Cloud-backed (S3, Azure Blob)
 - Database-backed (SQL, SQLite)
 

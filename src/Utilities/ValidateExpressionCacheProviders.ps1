@@ -1,4 +1,4 @@
-function Validate-ExpressionCacheProviders {
+function Confirm-ExpressionCacheProviders {
     [CmdletBinding()]
     param(
         [System.Collections.IDictionary]$Providers
