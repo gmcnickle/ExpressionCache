@@ -144,7 +144,7 @@ function Get-ExpressionCache {
     # Lazy init once per invocation
     if (-not $strategy.State.Initialized -and $strategy.Initialize) {
 
-      $initSplat = Build-CallableSplat -CommandName $strategy.Initialize `
+      $initSplat = New-CallableSplat -CommandName $strategy.Initialize `
         -Config $strategy.Config `
         -PreferArgs `
         -Log -LogPrefix 'Init'
@@ -199,7 +199,7 @@ function Get-ExpressionCache {
       $runtimeArgs.CacheFolder = $strategy.Config.CacheFolder
     }
 
-    $splat = Build-CallableSplat -CommandName $providerFunc `
+    $splat = New-CallableSplat -CommandName $providerFunc `
       -Config $strategy.Config `
       -Arguments $runtimeArgs `
       -PreferArgs `

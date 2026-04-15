@@ -1,4 +1,4 @@
-function Resolve-Provider {
+function Resolve-Providers {
     param(
         [Parameter(Mandatory)] 
         $Hint,

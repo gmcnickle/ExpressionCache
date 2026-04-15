@@ -11,7 +11,7 @@ Configuration semantics:
 - No duplicate names: registration fails if a provider with the same Name already exists
   (comparison is case-insensitive).
 - Eager initialization: when the spec includes an Initialize function, it is invoked once
-  using parameters built from Config (Build-SplatFromConfig). Required parameters are
+  using parameters built from Config (New-SplatFromConfig). Required parameters are
   enforced (Assert-MandatoryParamsPresent). If Config has an 'Initialized' property,
   it is set to $true upon success.
 
@@ -126,7 +126,7 @@ function Add-ExpressionCacheProvider {
     if ($registered -and $spec.Initialize) {
       if ($PSCmdlet.ShouldProcess($target, 'Initialize')) {
         try {
-          $paramSet = Build-SplatFromConfig -CommandName $spec.Initialize -Config $spec.Config
+          $paramSet = New-SplatFromConfig -CommandName $spec.Initialize -Config $spec.Config
           Assert-MandatoryParamsPresent -CommandName $spec.Initialize -Splat $paramSet
           & $spec.Initialize @paramSet
 

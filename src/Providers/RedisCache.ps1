@@ -25,7 +25,7 @@ function Initialize-Redis-Cache {
         throw "Provider '$ProviderName' not found." 
     }
 
-    Ensure-ProviderState $provider
+    Initialize-ProviderState $provider
 
     # If already initialized (client created), nothing else to do unless caller will force a recreate later
     if (Get-ProviderStateValue -Provider $provider -Key 'Initialized') { 
@@ -153,7 +153,7 @@ function Ensure-RedisClient {
     )
 
     $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
-    Ensure-ProviderState $provider
+    Initialize-ProviderState $provider
 
     # Optional force recreation: dispose & clear under provider write lock
     if ($ForceRecreate) {
@@ -195,7 +195,7 @@ function Ensure-RedisClient {
 
         # Create the client from config
         # Adjust these two lines to your real factory/command:
-        $paramSet = Build-SplatFromConfig -CommandName 'New-RedisClient' -Config $provider.Config
+        $paramSet = New-SplatFromConfig -CommandName 'New-RedisClient' -Config $provider.Config
         $paramSet['Provider'] = $provider
         Assert-MandatoryParamsPresent -CommandName 'New-RedisClient' -Splat $paramSet
         $newClient = New-RedisClient @paramSet

@@ -150,9 +150,9 @@ $userProfile
 - `New-ExpressionCacheKey -ScriptBlock <scriptblock> [-Arguments <object[]>]`
 
 **Provider Management**
-- `Add-ExpressionCacheProvider -ProviderSpec <hashtable>`
-- `Get-ExpressionCacheProvider [-Name <string>]`
-- `Remove-ExpressionCacheProvider -Name <string> [-PassThru]`
+- `Add-ExpressionCacheProvider -Provider <hashtable>`
+- `Get-ExpressionCacheProvider [-ProviderName <string>]`
+- `Remove-ExpressionCacheProvider -ProviderName <string> [-PassThru]`
 
 **Provider Authoring**
 - `Get-ProviderConfig -Provider <object> [-Raw]`

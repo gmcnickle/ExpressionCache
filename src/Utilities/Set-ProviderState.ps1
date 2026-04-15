@@ -10,6 +10,6 @@ function Set-ProviderState {
     }
     With-ProviderLock $Provider {
         $Provider.State = $dict
-        Bump-ProviderStateMeta $Provider
+        Update-ProviderStateMeta $Provider
     }
 }

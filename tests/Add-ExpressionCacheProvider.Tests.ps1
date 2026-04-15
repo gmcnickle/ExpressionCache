@@ -1,7 +1,7 @@
 # Pester v5+
 # Tests the real behavior of Add-ExpressionCacheProvider (no README assumptions).
 # Relies on the module's internal helpers: Test-ExpressionCacheProviderSpec,
-# Merge-ExpressionCacheConfig, Build-SplatFromConfig, Assert-MandatoryParamsPresent.
+# Merge-ExpressionCacheConfig, New-SplatFromConfig, Assert-MandatoryParamsPresent.
 
 #requires -Modules Pester
 
@@ -86,7 +86,7 @@ Describe 'Add-ExpressionCacheProvider' {
     }
 
 
-    It 'eagerly initializes when Initialize is provided, using Build-SplatFromConfig + mandatory enforcement' {
+    It 'eagerly initializes when Initialize is provided, using New-SplatFromConfig + mandatory enforcement' {
 
         InModuleScope ExpressionCache {
             Set-Variable -Name EC_InitCalls -Scope Script -Value 0

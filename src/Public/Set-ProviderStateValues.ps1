@@ -6,7 +6,7 @@ function Set-ProviderStateValues {
         [switch]$NonAtomic  # default is atomic (grouped under provider write lock)
     )
 
-    Ensure-ProviderState $Provider
+    Initialize-ProviderState $Provider
 
     if ($NonAtomic) {
         # Fast path, each key atomic but group is not
@@ -14,7 +14,7 @@ function Set-ProviderStateValues {
             $v = $Patch[$k]
             $null = $Provider.State.AddOrUpdate($k, $v, { param($kk, $old) $v })
         }
-        Bump-ProviderStateMeta $Provider
+        Update-ProviderStateMeta $Provider
         return
     }
 
@@ -25,6 +25,6 @@ function Set-ProviderStateValues {
             # Direct indexer set is fine under exclusive lock
             $Provider.State[$k] = $v
         }
-        Bump-ProviderStateMeta $Provider
+        Update-ProviderStateMeta $Provider
     }
 }
