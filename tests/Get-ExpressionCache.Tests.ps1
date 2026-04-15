@@ -70,6 +70,7 @@ function script:Get-ProviderConfigs {
   # --- Initialize (unless discovery) ---
   $providers = if ($Discovery) { $null } else {
     Initialize-ExpressionCache -AppName 'TestApp' -Providers $providerMap
+    Get-ExpressionCacheProvider
   }
 
   # Helper to build a single Redis test case with correct skip reason

@@ -25,10 +25,10 @@ function Invoke-Main {
         }
 
         # 2) Initialize ExpressionCache and register our provider
-        $providers = Initialize-ExpressionCache -Providers $inMemSpec -AppName "InMemoryCache.Sample" -ReplaceProviders:$SoleProvider
+        Initialize-ExpressionCache -Providers $inMemSpec -AppName "InMemoryCache.Sample" -ReplaceProviders:$SoleProvider
 
         # 3) Sanity check: ensure our provider is present
-        $registered = $providers.Values | Where-Object { $_.Name -eq $ProviderName }
+        $registered = Get-ExpressionCacheProvider -ProviderName $ProviderName -NoFallback
         if (-not $registered) {
             throw "Provider '$ProviderName' was not registered. Initialization failed."
         }

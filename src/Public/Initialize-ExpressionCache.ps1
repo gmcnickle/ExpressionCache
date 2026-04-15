@@ -27,5 +27,5 @@ function Initialize-ExpressionCache {
         $script:RegisteredStorageProviders = $merged
     }
 
-    return $merged
+    Write-Verbose "ExpressionCache initialized with $($merged.Count) provider(s): $($merged.Keys -join ', ')"
 }
