@@ -24,3 +24,6 @@ TestResults/
 
 # PowerShell cache
 *.pscache
+
+# Copilot audit log
+.copilot-audit-log.md
