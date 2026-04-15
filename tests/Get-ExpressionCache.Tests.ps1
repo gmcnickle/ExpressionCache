@@ -414,12 +414,12 @@ function script:Get-ProviderConfigs {
           Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments 10, 20
         } -ThrottleLimit 8
       } else {
-        $results = Invoke-ParallelRunspace -InputObject (1..8) -ThrottleLimit 8 -ScriptBlock {
+        $results = Invoke-ParallelRunspace -InputObject (1..8) -ThrottleLimit 8 -Variables @{ modulePath = $modulePath; ProviderName = $ProviderName } -ScriptBlock {
           param($i)
-          Import-Module $using:modulePath -Force
+          Import-Module $modulePath -Force
           Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
           $sb = { param($x, $y) $x + $y }
-          Get-ExpressionCache -ProviderName $using:ProviderName -ScriptBlock $sb -Arguments 10, 20
+          Get-ExpressionCache -ProviderName $ProviderName -ScriptBlock $sb -Arguments 10, 20
         }
       }
 
@@ -449,12 +449,12 @@ function script:Get-ProviderConfigs {
           Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments $i
         } -ThrottleLimit 8
       } else {
-        $results = Invoke-ParallelRunspace -InputObject (1..16) -ThrottleLimit 8 -ScriptBlock {
+        $results = Invoke-ParallelRunspace -InputObject (1..16) -ThrottleLimit 8 -Variables @{ modulePath = $modulePath; ProviderName = $ProviderName } -ScriptBlock {
           param($i)
-          Import-Module $using:modulePath -Force
+          Import-Module $modulePath -Force
           Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
           $sb = [scriptblock]::Create("param(`$x) `$x * 2")
-          Get-ExpressionCache -ProviderName $using:ProviderName -ScriptBlock $sb -Arguments $i
+          Get-ExpressionCache -ProviderName $ProviderName -ScriptBlock $sb -Arguments $i
         }
       }
 
@@ -491,12 +491,12 @@ function script:Get-ProviderConfigs {
           Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments 7
         } -ThrottleLimit 8
       } else {
-        $results = Invoke-ParallelRunspace -InputObject (1..12) -ThrottleLimit 8 -ScriptBlock {
+        $results = Invoke-ParallelRunspace -InputObject (1..12) -ThrottleLimit 8 -Variables @{ modulePath = $modulePath; ProviderName = $ProviderName } -ScriptBlock {
           param($i)
-          Import-Module $using:modulePath -Force
+          Import-Module $modulePath -Force
           Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
           $sb = { param($x) $x * 3 }
-          Get-ExpressionCache -ProviderName $using:ProviderName -ScriptBlock $sb -Arguments 7
+          Get-ExpressionCache -ProviderName $ProviderName -ScriptBlock $sb -Arguments 7
         }
       }
 
@@ -527,12 +527,12 @@ function script:Get-ProviderConfigs {
           Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments $i
         } -ThrottleLimit 10
       } else {
-        $null = Invoke-ParallelRunspace -InputObject (1..20) -ThrottleLimit 10 -ScriptBlock {
+        $null = Invoke-ParallelRunspace -InputObject (1..20) -ThrottleLimit 10 -Variables @{ modulePath = $modulePath; ProviderName = $ProviderName } -ScriptBlock {
           param($i)
-          Import-Module $using:modulePath -Force
+          Import-Module $modulePath -Force
           Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
           $sb = [scriptblock]::Create("param(`$n) @{ Id = `$n; Data = 'item' + `$n }")
-          Get-ExpressionCache -ProviderName $using:ProviderName -ScriptBlock $sb -Arguments $i
+          Get-ExpressionCache -ProviderName $ProviderName -ScriptBlock $sb -Arguments $i
         }
       }
 

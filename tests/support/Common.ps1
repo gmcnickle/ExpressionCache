@@ -55,10 +55,19 @@ function Invoke-ParallelRunspace {
         [Parameter(Mandatory, Position=1)]
         [scriptblock]$ScriptBlock,
         [int]$ThrottleLimit = 8,
-        [object[]]$ArgumentList
+        [object[]]$ArgumentList,
+        [hashtable]$Variables
     )
 
-    $runspacePool = [runspacefactory]::CreateRunspacePool(1, $ThrottleLimit)
+    $initialState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    if ($Variables) {
+        foreach ($kv in $Variables.GetEnumerator()) {
+            $entry = New-Object System.Management.Automation.Runspaces.SessionStateVariableEntry($kv.Key, $kv.Value, $null)
+            $initialState.Variables.Add($entry)
+        }
+    }
+
+    $runspacePool = [runspacefactory]::CreateRunspacePool(1, $ThrottleLimit, $initialState, [System.Management.Automation.Host.PSHost]$Host)
     $runspacePool.Open()
     $runspaces = @()
 
