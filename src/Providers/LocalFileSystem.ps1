@@ -243,7 +243,7 @@ function Write-JsonFileAtomically {
     if ($json -match '"System\.[^"]+"') {
         Write-Warning "ExpressionCache: ConvertTo-Json may have truncated objects at depth $JsonDepth. Consider increasing JsonDepth in provider config."
     }
-    $tmp = Join-Path $dir (".tmp_{0}_{1}.json" -f $PID, ([DateTime]::UtcNow.Ticks))
+    $tmp = Join-Path $dir (".tmp_{0}_{1}.json" -f $PID, [Guid]::NewGuid().ToString('N'))
 
     [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding($false)))
 
