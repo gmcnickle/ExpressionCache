@@ -373,14 +373,17 @@ function script:Get-ProviderConfigs {
     It 'throws a clear error when provider function is missing (standalone)' {
       $name = 'Broken-' + [guid]::NewGuid().ToString('N')
 
-      { Add-ExpressionCacheProvider -Provider @{
-          Name        = $name
-          GetOrCreate = 'Totally-Not-Here'   # doesn't exist
-          Config      = [pscustomobject]@{}
-        }
-      } | Should -Throw "*command 'Totally-Not-Here'*not found*"
+      # Registration now warns instead of throwing (function may exist at call time)
+      Add-ExpressionCacheProvider -Provider @{
+        Name        = $name
+        GetOrCreate = 'Totally-Not-Here'   # doesn't exist
+        Config      = [pscustomobject]@{}
+      } -WarningVariable regWarnings -WarningAction SilentlyContinue | Out-Null
 
-      { Get-ExpressionCache -ProviderName $name -ScriptBlock { 1 } } | Should -Throw '*Provider*not registered*'
+      $regWarnings | Should -Match "Totally-Not-Here"
+
+      # Invocation should still fail because the function doesn't exist
+      { Get-ExpressionCache -ProviderName $name -ScriptBlock { 1 } } | Should -Throw "*Totally-Not-Here*"
     }
 
 

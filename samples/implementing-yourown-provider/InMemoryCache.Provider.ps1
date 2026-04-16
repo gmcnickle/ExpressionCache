@@ -32,7 +32,7 @@ function script:Test-IM-Expired([string]$fqKey, [datetime]$nowUtc) {
     $true
 }
 
-function Initialize-InMemoryCache {
+function global:Initialize-InMemoryCache {
     [CmdletBinding()]
     param(
         [Parameter()]
@@ -46,7 +46,7 @@ function Initialize-InMemoryCache {
     $script:IM_DefaultTtl = $DefaultTtl
 }
 
-function Clear-InMemory-Cache {
+function global:Clear-InMemory-Cache {
     $script:IM_Cache.Clear()
     $script:IM_Expiry.Clear()
 
@@ -57,7 +57,7 @@ function Clear-InMemory-Cache {
     $script:IM_Locks.Clear()
 }
 
-function Get-OrCreate-InMemory-Cache {
+function global:Get-OrCreate-InMemory-Cache {
     param(
         [string]$Key,
         [string]$ProviderName,
@@ -118,7 +118,7 @@ function Get-OrCreate-InMemory-Cache {
 
 
 # ---------- Provider facade (matches your contract) ----------
-function New-InMemoryCacheProvider {
+function global:New-InMemoryCacheProvider {
     [CmdletBinding()]
     param(
         [Parameter()]

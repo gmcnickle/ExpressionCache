@@ -4,7 +4,7 @@
 #   - InMemoryCache.Provider.ps1 in the same folder
 
 Import-Module ExpressionCache -Force
-Import-Module (Join-Path $PSScriptRoot "InMemoryCache.Provider.ps1") -Force
+. (Join-Path $PSScriptRoot "InMemoryCache.Provider.ps1")
 
 function Invoke-Main {
     [CmdletBinding()]

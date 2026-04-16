@@ -67,10 +67,9 @@ function Test-ExpressionCacheProviderSpec {
             if ([string]::IsNullOrWhiteSpace($Value)) {
                 throw "ExpressionCache: Provider '$ProviderName': '$PropName' cannot be empty."
             }
-            # Verify function exists; discard output to stay silent
-            $null = Get-Command -Name $Value -ErrorAction SilentlyContinue
-            if (-not $?) {
-                throw "ExpressionCache: Provider '$ProviderName': command '$Value' (from '$PropName') not found."
+            # Verify function exists (search all scopes, not just module scope)
+            if (-not (Get-Command -Name $Value -ErrorAction SilentlyContinue)) {
+                Write-Warning "ExpressionCache: Provider '$ProviderName': command '$Value' (from '$PropName') not found in current scope. It must be available at call time."
             }
             return  # silent success
         }
