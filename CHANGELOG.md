@@ -3,6 +3,16 @@ All notable changes to **ExpressionCache** will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Fixed
+- Thread safety: `$script:__ParamCache` changed from plain hashtable to `ConcurrentDictionary` to prevent corruption under concurrent access.
+- Thread safety: `Get-ProviderLock` rewritten with `Monitor`-based double-checked locking to fix TOCTOU race on lock initialization.
+- Thread safety: wrapped unprotected reads of `$script:RegisteredStorageProviders` and `$script:Config` in `With-ReadLock`.
+
+### Changed
+- Removed duplicate `Build-CallableSplat.ps1` and `Build-SplatFromConfig.ps1` (identical copies of `New-CallableSplat.ps1` and `New-SplatFromConfig.ps1`).
+
+### Added
+- Smoke test for InMemoryCache sample (`InMemoryCache.Sample.Tests.ps1`).
 
 ## [0.3.0] - 2026-04-15
 ### Breaking Changes
