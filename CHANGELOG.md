@@ -17,8 +17,10 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - Configurable `JsonDepth` with truncation warnings for deep object graphs.
 
 ### Fixed
+- `Test-ExpressionCacheProviderSpec`: relaxed missing-command check from throw to warning, fixing cross-scope compatibility for custom providers defined outside the module.
 - `Merge-ObjectDeep`: fixed `-or` to `-and` for map type check; array-wrapped `.Keys` to prevent enumeration bugs.
 - `Get-FromLocalFileSystem`: added `-ErrorAction Stop` to `Get-Item` so TOCTOU race is caught by the existing `try/catch` (PS 5.1 non-terminating error fix).
+- InMemoryCache sample: fixed module scope isolation — dot-source provider, use `global:` function prefix so ExpressionCache can invoke custom provider functions.
 - Redis provider: removed duplicate `Get-RedisClient` function that shadowed the client initializer (caused by `Ensure-RedisClient` rename collision).
 - Redis provider: fixed `Use-RedisClient` leaking the client object into the pipeline.
 - Redis provider: suppressed unwanted output from lazy client initialization.

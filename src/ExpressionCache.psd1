@@ -107,10 +107,10 @@ PrivateData = @{
         # IconUri = ''
 
         # ReleaseNotes of this module
-        ReleaseNotes = 'Thread safety (ReaderWriterLockSlim, per-key SemaphoreSlim). PS 5.1 compat. 87 tests across 7 test files. Fixed Merge-ObjectDeep, LocalFileSystem TOCTOU race, Redis provider bugs. Breaking: Redis Host renamed to HostAddress.'
+        ReleaseNotes = 'Thread safety (ReaderWriterLockSlim, per-key SemaphoreSlim). PS 5.1 compat. 87 tests across 7 test files. Fixed Merge-ObjectDeep, LocalFileSystem TOCTOU race, provider spec cross-scope validation, InMemoryCache sample, Redis provider bugs. Breaking: Redis Host renamed to HostAddress.'
 
         # Prerelease string of this module
-        Prerelease = 'beta1'
+        Prerelease = 'beta2'
 
         # Flag to indicate whether the module requires explicit user acceptance for install/update/save
         # RequireLicenseAcceptance = $false
