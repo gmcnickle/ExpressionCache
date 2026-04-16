@@ -123,7 +123,8 @@ function Get-ExpressionCache {
   )
 
   begin {
-    if (-not $script:RegisteredStorageProviders) {
+    $initialized = With-ReadLock { [bool]$script:RegisteredStorageProviders }
+    if (-not $initialized) {
       throw "Module not initialized. Call Initialize-ExpressionCache first."
     }
 
@@ -163,7 +164,7 @@ function Get-ExpressionCache {
 
     $cacheVersion = if ($strategy.Config.Contains('CacheVersion')) { $strategy.Config.CacheVersion }
     else {
-      $script:Config.Version
+      With-ReadLock { $script:Config.Version }
     }
   }
 

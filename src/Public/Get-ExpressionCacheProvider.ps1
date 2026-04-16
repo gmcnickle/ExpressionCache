@@ -35,5 +35,5 @@ function Get-ExpressionCacheProvider {
         return
     }
 
-    return $script:RegisteredStorageProviders
+    return With-ReadLock { $script:RegisteredStorageProviders }
 }

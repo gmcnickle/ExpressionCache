@@ -1,6 +1,6 @@
-# Cache for parameter metadata to avoid repeated Get-Command lookups
+# Cache for parameter metadata to avoid repeated Get-Command lookups (thread-safe)
 if (-not $script:__ParamCache) {
-    $script:__ParamCache = @{}
+    $script:__ParamCache = New-Object 'System.Collections.Concurrent.ConcurrentDictionary[string, pscustomobject]'
 }
 
 function New-CallableSplat {

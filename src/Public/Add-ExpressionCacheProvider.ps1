@@ -84,7 +84,8 @@ function Add-ExpressionCacheProvider {
     $registered = $false
 
     # 2) Ensure the registry exists (write-lock, once)
-    if ($null -eq $script:RegisteredStorageProviders) {
+    $needsInit = With-ReadLock { $null -eq $script:RegisteredStorageProviders }
+    if ($needsInit) {
       $script:StateLock.EnterWriteLock()
       try {
         if ($null -eq $script:RegisteredStorageProviders) {

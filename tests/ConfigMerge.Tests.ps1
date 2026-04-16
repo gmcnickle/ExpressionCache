@@ -294,7 +294,7 @@ Describe 'Config merge and splat internals' {
         It 'merges Config and Arguments, preferring Config by default' {
             InModuleScope ExpressionCache {
                 function script:Test-SplatTarget { [CmdletBinding()] param([string]$Name, [int]$Port, [string]$Host2, [switch]$Force) }
-                $script:__ParamCache.Remove('Test-SplatTarget')
+                $null = $script:__ParamCache.TryRemove('Test-SplatTarget', [ref]$null)
                 $splat = New-CallableSplat -CommandName 'Test-SplatTarget' `
                     -Config @{ Name = 'from-config'; Port = 1234 } `
                     -Arguments @{ Name = 'from-args'; Host2 = 'extra' }
@@ -307,7 +307,7 @@ Describe 'Config merge and splat internals' {
         It '-PreferArgs makes Arguments override Config' {
             InModuleScope ExpressionCache {
                 function script:Test-SplatTarget { [CmdletBinding()] param([string]$Name, [int]$Port, [string]$Host2, [switch]$Force) }
-                $script:__ParamCache.Remove('Test-SplatTarget')
+                $null = $script:__ParamCache.TryRemove('Test-SplatTarget', [ref]$null)
                 $splat = New-CallableSplat -CommandName 'Test-SplatTarget' `
                     -Config @{ Name = 'from-config'; Port = 1234 } `
                     -Arguments @{ Name = 'from-args' } `
@@ -320,7 +320,7 @@ Describe 'Config merge and splat internals' {
         It 'excludes null and empty string values by default' {
             InModuleScope ExpressionCache {
                 function script:Test-SplatTarget { [CmdletBinding()] param([string]$Name, [int]$Port, [string]$Host2, [switch]$Force) }
-                $script:__ParamCache.Remove('Test-SplatTarget')
+                $null = $script:__ParamCache.TryRemove('Test-SplatTarget', [ref]$null)
                 $splat = New-CallableSplat -CommandName 'Test-SplatTarget' `
                     -Config @{ Name = $null; Port = 8080; Host2 = '' }
                 $splat.Keys | Should -Not -Contain 'Name'
@@ -332,7 +332,7 @@ Describe 'Config merge and splat internals' {
         It '-IncludeNulls passes null values through' {
             InModuleScope ExpressionCache {
                 function script:Test-SplatTarget { [CmdletBinding()] param([string]$Name, [int]$Port, [string]$Host2, [switch]$Force) }
-                $script:__ParamCache.Remove('Test-SplatTarget')
+                $null = $script:__ParamCache.TryRemove('Test-SplatTarget', [ref]$null)
                 $splat = New-CallableSplat -CommandName 'Test-SplatTarget' `
                     -Config @{ Name = $null; Port = 8080 } `
                     -IncludeNulls
@@ -345,7 +345,7 @@ Describe 'Config merge and splat internals' {
         It 'includes switch parameters only when truthy' {
             InModuleScope ExpressionCache {
                 function script:Test-SplatTarget { [CmdletBinding()] param([string]$Name, [int]$Port, [string]$Host2, [switch]$Force) }
-                $script:__ParamCache.Remove('Test-SplatTarget')
+                $null = $script:__ParamCache.TryRemove('Test-SplatTarget', [ref]$null)
                 $splatOn = New-CallableSplat -CommandName 'Test-SplatTarget' `
                     -Config @{ Force = $true; Name = 'x' }
                 $splatOn.Keys | Should -Contain 'Force'
@@ -360,7 +360,7 @@ Describe 'Config merge and splat internals' {
         It 'ignores parameters not accepted by the target command' {
             InModuleScope ExpressionCache {
                 function script:Test-SplatTarget { [CmdletBinding()] param([string]$Name, [int]$Port, [string]$Host2, [switch]$Force) }
-                $script:__ParamCache.Remove('Test-SplatTarget')
+                $null = $script:__ParamCache.TryRemove('Test-SplatTarget', [ref]$null)
                 $splat = New-CallableSplat -CommandName 'Test-SplatTarget' `
                     -Config @{ Name = 'ok'; Bogus = 'nope' }
                 $splat.Keys | Should -Contain 'Name'
