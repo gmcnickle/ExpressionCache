@@ -408,7 +408,7 @@ Describe 'Config merge and splat internals' {
                 OnlyMe = @{
                     Name        = 'OnlyMe'
                     GetOrCreate = 'Get-LocalFileSystem-CachedValue'
-                    Config      = @{ CacheFolder = $env:TEMP }
+                    Config      = @{ CacheFolder = ([System.IO.Path]::GetTempPath()) }
                 }
             }) | Out-Null
 
