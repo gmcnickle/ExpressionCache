@@ -103,7 +103,7 @@ function Get-FromLocalFileSystem {
 
     # Avoid TOCTOU by handling races in try/catch
     try {
-        $item = Get-Item -LiteralPath $cacheFile -Force
+        $item = Get-Item -LiteralPath $cacheFile -Force -ErrorAction Stop
         $lastWriteUtc = $item.LastWriteTimeUtc
         $nowUtc = (Get-Date).ToUniversalTime()
 
