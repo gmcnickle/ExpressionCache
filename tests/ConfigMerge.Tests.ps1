@@ -389,7 +389,7 @@ Describe 'Config merge and splat internals' {
         }
 
         It 'user config overrides merge with defaults for LocalFileSystemCache' {
-            $customFolder = Join-Path $env:TEMP 'MergeTestCache'
+            $customFolder = Join-Path ([System.IO.Path]::GetTempPath()) 'MergeTestCache'
             Initialize-ExpressionCache -AppName 'MergeTest' -Providers ([ordered]@{
                 LocalFileSystemCache = @{
                     Name   = 'LocalFileSystemCache'
