@@ -175,12 +175,14 @@ function Get-RedisClient {
     $gate = Get-ProviderStateValue -Provider $provider -Key '__ClientInitGate'
     if (-not $gate) {
         With-ProviderLock $provider {
-            $gate = Get-ProviderStateValue -Provider $provider -Key '__ClientInitGate'
-            if (-not $gate) {
-                $gate = New-Object System.Threading.SemaphoreSlim(1, 1)
-                $provider.State['__ClientInitGate'] = $gate
+            $existing = Get-ProviderStateValue -Provider $provider -Key '__ClientInitGate'
+            if (-not $existing) {
+                $existing = New-Object System.Threading.SemaphoreSlim(1, 1)
+                $provider.State['__ClientInitGate'] = $existing
             }
         }
+        # Re-read after lock; scriptblock variables don't propagate to this scope
+        $gate = Get-ProviderStateValue -Provider $provider -Key '__ClientInitGate'
     }
 
     $ts = [TimeSpan]::FromSeconds([Math]::Max(1, $WaitSeconds))
