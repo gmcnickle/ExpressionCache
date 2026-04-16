@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Which part to bump?
+        description: Which part to bump? Use 'none' to publish the current version as-is.
         required: true
         default: patch
         type: choice
-        options: [patch, minor, major]
+        options: [none, patch, minor, major]
       notes:
         description: >-
           (Optional) Release notes in Markdown. If omitted, the workflow will
@@ -59,26 +59,41 @@ jobs:
           $manifest = Test-ModuleManifest $psd1
           $ver = [version]$manifest.Version
 
-          switch ("${{ env.BUMP_PART }}") {
-            'major' { $new = [version]"$($ver.Major + 1).0.0" }
-            'minor' { $new = [version]"$($ver.Major).$($ver.Minor + 1).0" }
-            default { $new = [version]"$($ver.Major).$($ver.Minor).$($ver.Build + 1)" }
+          if ("${{ env.BUMP_PART }}" -eq 'none') {
+            $new = $ver
+            Write-Host "No version bump requested; publishing as $new"
+          } else {
+            switch ("${{ env.BUMP_PART }}") {
+              'major' { $new = [version]"$($ver.Major + 1).0.0" }
+              'minor' { $new = [version]"$($ver.Major).$($ver.Minor + 1).0" }
+              default { $new = [version]"$($ver.Major).$($ver.Minor).$($ver.Build + 1)" }
+            }
+            Write-Host "Bumping version $ver -> $new"
           }
-
-          Write-Host "Bumping version $ver -> $new"
 
           # Preserve/force critical fields so exports don't disappear
           $root = if ($manifest.RootModule) { $manifest.RootModule } else { 'ExpressionCache.psm1' }
           $fx   = if ($manifest.FunctionsToExport -and $manifest.FunctionsToExport.Count) { $manifest.FunctionsToExport } else { '*' }
 
-          Update-ModuleManifest -Path $psd1 `
-            -ModuleVersion $new `
-            -RootModule $root `
-            -FunctionsToExport $fx `
-            -CmdletsToExport @() `
-            -AliasesToExport @()
+          # Read prerelease from PSData if present
+          $prerelease = ''
+          $psData = $manifest.PrivateData.PSData
+          if ($psData -and $psData.Prerelease) { $prerelease = $psData.Prerelease }
 
+          $updateParams = @{
+            Path               = $psd1
+            ModuleVersion      = $new
+            RootModule         = $root
+            FunctionsToExport  = $fx
+            CmdletsToExport    = @()
+            AliasesToExport    = @()
+          }
+          if ($prerelease) { $updateParams['Prerelease'] = $prerelease }
+          Update-ModuleManifest @updateParams
+
+          $fullVersion = if ($prerelease) { "$new-$prerelease" } else { "$new" }
           "newVersion=$new" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "fullVersion=$fullVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Extract notes from CHANGELOG.md (if no manual notes)
         id: changelog
@@ -124,12 +139,12 @@ jobs:
           git config user.email "actions@github.com"
 
           git add "${{ env.PSD1_PATH }}"
-          git commit -m "chore(release): bump version to ${{ steps.bump.outputs.newVersion }} [skip ci]" || echo "No changes to commit."
+          git commit -m "chore(release): bump version to ${{ steps.bump.outputs.fullVersion }} [skip ci]" || echo "No changes to commit."
 
           $branch = "${{ github.ref_name }}"
           git push origin "HEAD:$branch"
 
-          $tag = "v${{ steps.bump.outputs.newVersion }}"
+          $tag = "v${{ steps.bump.outputs.fullVersion }}"
           git tag $tag
           git push origin $tag
 
@@ -194,6 +209,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.bump.outputs.newVersion }}
-          name: ExpressionCache v${{ steps.bump.outputs.newVersion }}
-          body: ${{ github.event.inputs.notes || steps.changelog.outputs.body || format('Automated release {0}.', steps.bump.outputs.newVersion) }}
+          tag_name: v${{ steps.bump.outputs.fullVersion }}
+          name: ExpressionCache v${{ steps.bump.outputs.fullVersion }}
+          prerelease: ${{ contains(steps.bump.outputs.fullVersion, '-') }}
+          body: ${{ github.event.inputs.notes || steps.changelog.outputs.body || format('Automated release {0}.', steps.bump.outputs.fullVersion) }}

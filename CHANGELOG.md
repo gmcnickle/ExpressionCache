@@ -12,11 +12,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - **Thread safety**: `ReaderWriterLockSlim` for provider state, per-key `SemaphoreSlim` gates for single-flight cache operations.
 - **PowerShell 5.1 compatibility**: replaced all `[type]::new()` calls with `New-Object`; added `Invoke-ParallelRunspace` helper for PS 5.1 concurrent tests.
-- **Test coverage**: added test suites for `Get-ExpressionCacheProvider`, `Remove-ExpressionCacheProvider`, `Set-ProviderConfig`, `Set-ProviderStateValues`, `With-ProviderLock`, and `ProviderStateAndConfig` (6 new test files, 57 total tests).
+- **Test coverage**: added test suites for `Get-ExpressionCacheProvider`, `Remove-ExpressionCacheProvider`, `Set-ProviderConfig`, `Set-ProviderStateValues`, `With-ProviderLock`, `ProviderStateAndConfig`, and `ConfigMerge` (7 new test files, 87 total tests).
 - **Redis test infrastructure**: auto-detection of Redis via Docker or local `redis-cli`, isolated test prefix per run, skip logic for environments without Redis.
 - Configurable `JsonDepth` with truncation warnings for deep object graphs.
 
 ### Fixed
+- `Merge-ObjectDeep`: fixed `-or` to `-and` for map type check; array-wrapped `.Keys` to prevent enumeration bugs.
+- `Get-FromLocalFileSystem`: added `-ErrorAction Stop` to `Get-Item` so TOCTOU race is caught by the existing `try/catch` (PS 5.1 non-terminating error fix).
 - Redis provider: removed duplicate `Get-RedisClient` function that shadowed the client initializer (caused by `Ensure-RedisClient` rename collision).
 - Redis provider: fixed `Use-RedisClient` leaking the client object into the pipeline.
 - Redis provider: suppressed unwanted output from lazy client initialization.
