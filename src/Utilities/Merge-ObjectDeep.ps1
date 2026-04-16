@@ -20,15 +20,15 @@ function Merge-ObjectDeep {
     $bIsMap = ($Base -is [hashtable] -or $Base -is [pscustomobject])
     $oIsMap = ($Override -is [hashtable] -or $Override -is [pscustomobject])
 
-    if ($bIsMap -or $oIsMap) {
+    if ($bIsMap -and $oIsMap) {
         $b = _ToHashtable $Base
         $o = _ToHashtable $Override
 
         $resultIsPso = ($Base -is [pscustomobject])
         $result = if ($resultIsPso) { [pscustomobject]@{} } else { @{} }
 
-        $bKeys = if ($b) { $b.Keys } else { @() }
-        $oKeys = if ($o) { $o.Keys } else { @() }
+        $bKeys = @(if ($b) { $b.Keys } else { @() })
+        $oKeys = @(if ($o) { $o.Keys } else { @() })
         $allKeys = @($bKeys + $oKeys | Select-Object -Unique)
 
         foreach ($k in $allKeys) {
