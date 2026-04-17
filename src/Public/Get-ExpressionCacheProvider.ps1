@@ -31,9 +31,12 @@ function Get-ExpressionCacheProvider {
         return $result
     }
 
-    if ($NoFallback) {
+    # When a specific name was requested but not found, warn and return $null
+    if ($ProviderName) {
+        Write-Warning "ExpressionCache: provider '$ProviderName' is not registered."
         return
     }
 
+    # No name given — return all providers
     return With-ReadLock { $script:RegisteredStorageProviders }
 }

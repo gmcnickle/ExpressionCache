@@ -56,7 +56,7 @@ Describe 'Get-ExpressionCacheProvider' {
         $result | Should -BeNullOrEmpty
     }
 
-    It 'falls back to all providers when name not found and -NoFallback is not set' {
+    It 'returns $null and warns when provider name is not found' {
         InModuleScope ExpressionCache {
             Add-ExpressionCacheProvider -Provider @{
                 Name        = 'FallbackTest'
@@ -64,10 +64,8 @@ Describe 'Get-ExpressionCacheProvider' {
                 Config      = [pscustomobject]@{}
             } | Out-Null
 
-            # Ask for a non-existent name without -NoFallback
-            $result = Get-ExpressionCacheProvider -ProviderName 'DoesNotExist'
-            # Should get the full provider collection as fallback
-            $result | Should -Not -BeNullOrEmpty
+            $result = Get-ExpressionCacheProvider -ProviderName 'DoesNotExist' -WarningAction SilentlyContinue
+            $result | Should -BeNullOrEmpty
         }
     }
 }

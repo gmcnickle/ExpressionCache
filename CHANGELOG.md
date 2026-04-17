@@ -2,7 +2,7 @@
 All notable changes to **ExpressionCache** will be documented in this file.  
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.1] - 2026-04-16
 ### Fixed
 - Thread safety: `$script:__ParamCache` changed from plain hashtable to `ConcurrentDictionary` to prevent corruption under concurrent access.
 - Thread safety: `Get-ProviderLock` rewritten with `Monitor`-based double-checked locking to fix TOCTOU race on lock initialization.
@@ -37,6 +37,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - `Initialize-ExpressionCache`: fixed output leaking to pipeline.
 - Naming inconsistencies across module (standardized to PowerShell approved verbs where possible).
 - Temp file cleanup in `LocalFileSystem` provider.
+- Thread safety: `$script:__ParamCache` changed from plain hashtable to `ConcurrentDictionary` to prevent corruption under concurrent access.
+- Thread safety: `Get-ProviderLock` rewritten with `Monitor`-based double-checked locking to fix TOCTOU race on lock initialization.
+- Thread safety: wrapped unprotected reads of `$script:RegisteredStorageProviders` and `$script:Config` in `With-ReadLock`.
 
 ### Changed
 - Redis provider documentation rewritten to accurately reflect capabilities (native RESP protocol, thread-safe init, sliding TTL, SCAN-based clearing, envelope serialization with gzip).
