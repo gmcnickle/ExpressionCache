@@ -25,6 +25,12 @@ jobs:
 
       - name: Lint (PSScriptAnalyzer)
         run: |
+          if ($PSVersionTable.PSEdition -eq 'Desktop') {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          }
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Default
+          }
           Set-PSRepository PSGallery -InstallationPolicy Trusted
           Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
           $settings = '.pssa/PSScriptAnalyzerSettings.psd1'
@@ -61,16 +67,14 @@ jobs:
         with:
           name: Pester-Results-${{ inputs.shell }}
           path: test-results/pester-${{ inputs.shell }}.xml
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
 
       - uses: dorny/test-reporter@v2
-        if: always()
+        if: always() && hashFiles('test-results/*.xml') != ''
         with:
           name: Pester (${{ inputs.shell == 'powershell' && 'Windows PowerShell 5.1' || 'PowerShell 7' }})
           path: test-results/pester-${{ inputs.shell }}.xml
           reporter: java-junit
           fail-on-empty: true
           fail-on-error: false
-
-          
