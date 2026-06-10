@@ -38,6 +38,8 @@ function Get-DefaultProviders {
                 Password            = if ($env:EXPRCACHE_REDIS_PASSWORD) { $env:EXPRCACHE_REDIS_PASSWORD } else { '' }
                 DefaultMaxAge       = (New-TimeSpan -Days 1)
                 DeferClientCreation = $true
+                WaitSeconds         = 10
+                LockSeconds         = 300
             }
             GetOrCreate = 'Get-Redis-CachedValue'
             Initialize  = 'Initialize-Redis-Cache'

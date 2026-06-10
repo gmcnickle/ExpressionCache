@@ -7,5 +7,7 @@ function Set-ProviderStateValue {
 
     Initialize-ProviderState $Provider
 
-    $null = $Provider.State.AddOrUpdate($Key, $Value, { param($k, $old) $Value })
+    With-ProviderLock $Provider {
+        $null = $Provider.State.AddOrUpdate($Key, $Value, { param($k, $old) $Value })
+    }
 }

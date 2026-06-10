@@ -4,11 +4,12 @@ function Get-ProviderStateValue {
         [object]$Default = $null
     )
 
-    $out = $null
-    if ($Provider.State -and $Provider.State.TryGetValue($Key, [ref]$out)) { 
-        return $out 
-    } 
-    else { 
-        return $Default 
+    With-ProviderLock $Provider {
+        $out = $null
+        if ($Provider.State -and $Provider.State.TryGetValue($Key, [ref]$out)) {
+            return $out
+        }
+
+        return $Default
     }
 }

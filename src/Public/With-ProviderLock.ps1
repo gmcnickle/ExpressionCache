@@ -5,12 +5,17 @@ function With-ProviderLock {
     )
 
     $l = Get-ProviderLock $Provider
-    $l.EnterWriteLock(); 
-    
-    try { 
-        & $Body 
-    } 
-    finally { 
-        $l.ExitWriteLock() 
+    if ($l.IsWriteLockHeld) {
+        & $Body
+        return
+    }
+
+    $l.EnterWriteLock()
+
+    try {
+        & $Body
+    }
+    finally {
+        $l.ExitWriteLock()
     }
 }

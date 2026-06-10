@@ -225,6 +225,7 @@ The included Redis provider is a fully functional, dependency-free implementatio
 What it includes:
 - Native RESP protocol client (no external modules required)
 - Lazy, thread-safe client initialization with single-flight gating
+- Distributed per-key locking to prevent duplicate cache-miss computation across processes
 - TTL-based expiration with sliding expiry support
 - Per-key metadata tracking (query description + timestamp)
 - Envelope-based serialization (JSON with CliXml fallback, gzip for large payloads)
@@ -258,9 +259,13 @@ Provider config overrides (merged with defaults):
         Port        = 6379
         Database    = 2
         Password    = ''   # set $env:EXPRCACHE_REDIS_PASSWORD or pass explicitly
+        WaitSeconds = 10   # maximum time to wait for another worker computing the same key
+        LockSeconds = 300  # lock lifetime; increase for computations that may exceed five minutes
     }
 }
 ```
+
+`WaitSeconds` and `LockSeconds` are optional and use the standard provider configuration pattern. Most users do not need to change them. Redis uses temporary `<cache-key>:__lock` entries while coordinating a cache miss.
 
 > The Redis provider is designed as a reference implementation that demonstrates the full provider contract. It is suitable for development and single-instance Redis deployments. For high-availability or clustered Redis, consider building a provider on top of a dedicated Redis client library.
 
@@ -404,7 +409,7 @@ Add-ExpressionCacheProvider -Provider $provider
 ```
 
 Providers included today:
-- **LocalFileSystemCache** – simple file-based persistence.
+- **LocalFileSystemCache** – file-based persistence with cross-process coordination for same-key cache misses.
 - **RedisCache** – dependency-free Redis provider with native RESP protocol support, suitable for single-instance deployments and as a reference for building custom remote providers.
 
 ### Writing Executors
@@ -545,7 +550,7 @@ Get-ExpressionCache -ProviderName $myProvider.Name -ScriptBlock { ... }
 ```
 
 Providers included:
-- **LocalFileSystemCache** – file-based, zero dependencies
+- **LocalFileSystemCache** – file-based, zero dependencies, with cross-process same-key coordination
 - **RedisCache** – native RESP protocol, zero dependencies, reference implementation for remote/shared caching
 
 Potential extensions:

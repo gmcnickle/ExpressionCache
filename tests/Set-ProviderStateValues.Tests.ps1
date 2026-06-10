@@ -60,6 +60,47 @@ Describe 'Set-ProviderStateValues' {
                 $rev2 | Should -BeGreaterThan $rev1
             }
         }
+
+        It 'blocks readers until the grouped update lock is released' {
+            InModuleScope ExpressionCache {
+                $spec = @{
+                    Name        = 'AtomicReaders'
+                    GetOrCreate = 'Get-LocalFileSystem-CachedValue'
+                    Config      = [pscustomobject]@{}
+                }
+
+                Add-ExpressionCacheProvider -Provider $spec | Out-Null
+                $p = Get-ExpressionCacheProvider -ProviderName 'AtomicReaders'
+                Set-ProviderStateValues -Provider $p -Patch @{ alpha = 'old'; beta = 'old' }
+
+                $providerLock = Get-ProviderLock $p
+                $providerLock.EnterWriteLock()
+                $ps = [powershell]::Create()
+                try {
+                    $modulePath = (Get-Module ExpressionCache).Path
+                    $null = $ps.AddScript({
+                        param($mp, $provider)
+                        Import-Module $mp -Force
+                        Get-ProviderStateValue -Provider $provider -Key 'alpha'
+                    }).AddArgument($modulePath).AddArgument($p)
+
+                    $async = $ps.BeginInvoke()
+                    Start-Sleep -Milliseconds 200
+                    $async.IsCompleted | Should -BeFalse
+                }
+                finally {
+                    $providerLock.ExitWriteLock()
+                }
+
+                try {
+                    $output = $ps.EndInvoke($async)
+                    $output[0] | Should -Be 'old'
+                }
+                finally {
+                    $ps.Dispose()
+                }
+            }
+        }
     }
 
     Context 'NonAtomic mode' {

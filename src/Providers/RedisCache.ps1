@@ -237,13 +237,16 @@ function Use-RedisClient {
 
     $null = Get-RedisClient -ProviderName $ProviderName
     $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
-    $client = Get-ProviderStateValue -Provider $provider -Key 'Client'
+    $clientBody = $Body
+    With-ProviderLock $provider {
+        $client = Get-ProviderStateValue -Provider $provider -Key 'Client'
 
-    if (-not $client) {
-        throw "No Redis client available for provider '$ProviderName'."
+        if (-not $client) {
+            throw "No Redis client available for provider '$ProviderName'."
+        }
+
+        & $clientBody $client
     }
-
-    & $Body $client
 }
 
 function Get-Redis-CachedValue {
@@ -253,7 +256,9 @@ function Get-Redis-CachedValue {
         [Parameter(Mandatory)][string]$Key,
         [Parameter(Mandatory)][scriptblock]$ScriptBlock,
         [object[]]$Arguments,
-        [Parameter(Mandatory)][CachePolicy]$Policy
+        [Parameter(Mandatory)][CachePolicy]$Policy,
+        [int]$WaitSeconds = 10,
+        [int]$LockSeconds = 300
     )
 
     try {
@@ -276,24 +281,56 @@ function Get-Redis-CachedValue {
                 return (Read-CacheValue $raw)
             }
 
-            Write-RedisLog "[CACHE MISS] Key: $rkey — computing value"
-            if ($null -eq $Arguments) { $Arguments = @() }
-            $result = & $ScriptBlock @Arguments
-            if ($null -eq $result) { return $null }
+            $lockKey = "$rkey:__lock"
+            $lockToken = [Guid]::NewGuid().ToString('N')
+            $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $WaitSeconds))
+            $lockTtlMs = [Math]::Max(5000, ([Math]::Max(1, $LockSeconds) * 1000))
+            $hasLock = $false
 
-            $payload = Write-CacheValue -Value $result
+            while (-not $hasLock -and [DateTime]::UtcNow -lt $deadline) {
+                $lockResult = Invoke-RedisRaw -Provider $provider -Context $client `
+                    -Arguments ([object[]]@('SET', $lockKey, $lockToken, 'NX', 'PX', [string]$lockTtlMs))
+                $hasLock = ($lockResult -eq 'OK')
+                if (-not $hasLock) {
+                    Start-Sleep -Milliseconds 50
+                }
+            }
 
-            Invoke-RedisRaw -Provider $provider -Context $client `
-                -Arguments ([object[]]@('SET', $rkey, $payload, 'EX', [string]$Policy.TtlSeconds)) | Out-Null
+            if (-not $hasLock) {
+                throw "Timeout acquiring Redis cache gate for '$Key' after $WaitSeconds seconds."
+            }
 
-            $desc = ($ScriptBlock.ToString() -split "`r?`n" | ForEach-Object { $_.Trim() }) -join ' '
-            Invoke-RedisRaw -Provider $provider -Context $client `
-                -Arguments ([object[]]@('HSET', "$rkey:meta", 'q', $desc, 'ts', (Get-Date).ToString('o'))) | Out-Null
-            Invoke-RedisRaw -Provider $provider -Context $client `
-                -Arguments ([object[]]@('EXPIRE', "$rkey:meta", [string]$Policy.TtlSeconds)) | Out-Null
+            try {
+                # Re-check after acquiring the distributed gate.
+                $raw = Invoke-RedisRaw -Provider $provider -Context $client -Arguments ([object[]]@('GET', $rkey))
+                if ($null -ne $raw) {
+                    return (Read-CacheValue $raw)
+                }
 
-            Write-RedisLog "[CACHE STORE] Key: $rkey"
-            return $result
+                Write-RedisLog "[CACHE MISS] Key: $rkey - computing value"
+                if ($null -eq $Arguments) { $Arguments = @() }
+                $result = & $ScriptBlock @Arguments
+                if ($null -eq $result) { return $null }
+
+                $payload = Write-CacheValue -Value $result
+
+                Invoke-RedisRaw -Provider $provider -Context $client `
+                    -Arguments ([object[]]@('SET', $rkey, $payload, 'EX', [string]$Policy.TtlSeconds)) | Out-Null
+
+                $desc = ($ScriptBlock.ToString() -split "`r?`n" | ForEach-Object { $_.Trim() }) -join ' '
+                Invoke-RedisRaw -Provider $provider -Context $client `
+                    -Arguments ([object[]]@('HSET', "$rkey:meta", 'q', $desc, 'ts', (Get-Date).ToString('o'))) | Out-Null
+                Invoke-RedisRaw -Provider $provider -Context $client `
+                    -Arguments ([object[]]@('EXPIRE', "$rkey:meta", [string]$Policy.TtlSeconds)) | Out-Null
+
+                Write-RedisLog "[CACHE STORE] Key: $rkey"
+                return $result
+            }
+            finally {
+                $unlockScript = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
+                Invoke-RedisRaw -Provider $provider -Context $client `
+                    -Arguments ([object[]]@('EVAL', $unlockScript, '1', $lockKey, $lockToken)) | Out-Null
+            }
         }
     }
     finally {

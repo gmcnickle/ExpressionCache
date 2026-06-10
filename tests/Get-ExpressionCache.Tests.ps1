@@ -404,31 +404,58 @@ function script:Get-ProviderConfigs {
       Reset-ProviderState $Provider
 
       $modulePath = (Get-Module ExpressionCache).Path
+      $appName = 'ThreadTest-' + [guid]::NewGuid().ToString('N')
+      $cacheKey = 'single-flight'
+      $counterPath = Join-Path ([IO.Path]::GetTempPath()) ("ExpressionCache-count-{0}.txt" -f [guid]::NewGuid().ToString('N'))
 
-      # 8 parallel runspaces all request the same key; each should get 30
-
-      if ($PSVersionTable.PSVersion.Major -ge 7) {
-        $results = 1..8 | ForEach-Object -Parallel {
-          $mp = $using:modulePath
-          $pn = $using:ProviderName
-          Import-Module $mp -Force
-          Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
-          $sb = { param($x, $y) $x + $y }
-          Get-ExpressionCache -ProviderName $pn -ScriptBlock $sb -Arguments 10, 20
-        } -ThrottleLimit 8
-      } else {
-        $results = Invoke-ParallelRunspace -InputObject (1..8) -ThrottleLimit 8 -Variables @{ modulePath = $modulePath; ProviderName = $ProviderName } -ScriptBlock {
-          param($i)
-          Import-Module $modulePath -Force
-          Initialize-ExpressionCache -AppName 'ThreadTest' | Out-Null
-          $sb = { param($x, $y) $x + $y }
-          Get-ExpressionCache -ProviderName $ProviderName -ScriptBlock $sb -Arguments 10, 20
+      try {
+        # Each runspace has a separate module instance. The named gate must still
+        # ensure that only one expression executes for the shared cache key.
+        if ($PSVersionTable.PSVersion.Major -ge 7) {
+          $results = 1..8 | ForEach-Object -Parallel {
+            $mp = $using:modulePath
+            $pn = $using:ProviderName
+            $app = $using:appName
+            $key = $using:cacheKey
+            $counter = $using:counterPath
+            Import-Module $mp -Force
+            Initialize-ExpressionCache -AppName $app | Out-Null
+            $sb = {
+              param($path, $x, $y)
+              [IO.File]::AppendAllText($path, "executed`n")
+              Start-Sleep -Milliseconds 150
+              $x + $y
+            }
+            Get-ExpressionCache -ProviderName $pn -Key $key -ScriptBlock $sb -Arguments $counter, 10, 20
+          } -ThrottleLimit 8
+        } else {
+          $results = Invoke-ParallelRunspace -InputObject (1..8) -ThrottleLimit 8 -Variables @{
+            modulePath = $modulePath
+            ProviderName = $ProviderName
+            appName = $appName
+            cacheKey = $cacheKey
+            counterPath = $counterPath
+          } -ScriptBlock {
+            param($i)
+            Import-Module $modulePath -Force
+            Initialize-ExpressionCache -AppName $appName | Out-Null
+            $sb = {
+              param($path, $x, $y)
+              [IO.File]::AppendAllText($path, "executed`n")
+              Start-Sleep -Milliseconds 150
+              $x + $y
+            }
+            Get-ExpressionCache -ProviderName $ProviderName -Key $cacheKey -ScriptBlock $sb -Arguments $counterPath, 10, 20
+          }
         }
-      }
 
-      # All threads should get the correct result
-      $results | Should -HaveCount 8
-      $results | ForEach-Object { $_ | Should -Be 30 }
+        $results | Should -HaveCount 8
+        $results | ForEach-Object { $_ | Should -Be 30 }
+        ([IO.File]::ReadAllLines($counterPath)).Count | Should -Be 1
+      }
+      finally {
+        Remove-Item -LiteralPath $counterPath -Force -ErrorAction SilentlyContinue
+      }
     }
 
     It 'concurrent different keys all succeed without deadlock' {

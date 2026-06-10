@@ -179,23 +179,33 @@ function Get-LocalFileSystem-CachedValue {
         Write-Verbose "LocalFileSystemCache: Retrieved from cache: $Key"; return $response 
     }
 
-    # Single-flight gate for this key (avoid duplicate compute+writes)
+    # Named mutex coordinates identical requests across runspaces and processes.
     $gateKey = "lfs::$CacheFolder::$Key"
-    $gate = Get-KeyGate -Key $gateKey
+    $gateHash = Get-ExpressionCacheHash -InputString $gateKey
+    $gateName = "ExpressionCache_LFS_$gateHash"
+    $gate = New-Object System.Threading.Mutex($false, $gateName)
     $ts = [TimeSpan]::FromSeconds([Math]::Max(1, $WaitSeconds))
-
-    if (-not $gate.Wait($ts)) { 
-        throw "Timeout acquiring cache gate for '$Key' after $WaitSeconds s." 
-    }
+    $acquired = $false
 
     try {
-        # Re-check after acquiring the gate (another thread may have populated it)
-        $response = Get-FromLocalFileSystem -Key $Key -CacheFolder $CacheFolder -CacheVersion $CacheVersion -Policy $Policy
-        if ($null -ne $response) { 
-            return $response 
+        try {
+            $acquired = $gate.WaitOne($ts)
+        }
+        catch [System.Threading.AbandonedMutexException] {
+            $acquired = $true
         }
 
-        # MISS → compute
+        if (-not $acquired) {
+            throw "Timeout acquiring cache gate for '$Key' after $WaitSeconds s."
+        }
+
+        # Re-check after acquiring the gate (another worker may have populated it)
+        $response = Get-FromLocalFileSystem -Key $Key -CacheFolder $CacheFolder -CacheVersion $CacheVersion -Policy $Policy
+        if ($null -ne $response) {
+            return $response
+        }
+
+        # MISS -> compute
         if ($null -eq $Arguments) { $Arguments = @() }
         $response = & $ScriptBlock @Arguments
 
@@ -211,7 +221,10 @@ function Get-LocalFileSystem-CachedValue {
         return $response
     }
     finally {
-        $gate.Release() | Out-Null
+        if ($acquired) {
+            $gate.ReleaseMutex()
+        }
+        $gate.Dispose()
     }
 }
 
@@ -251,9 +264,20 @@ function Write-JsonFileAtomically {
     $maxRetries = 3
     for ($attempt = 0; $attempt -le $maxRetries; $attempt++) {
         try {
-            # .NET Framework (PS 5.1) File.Move lacks overwrite param; delete first
-            if ([IO.File]::Exists($Path)) { [IO.File]::Delete($Path) }
-            [IO.File]::Move($tmp, $Path)
+            if ([IO.File]::Exists($Path)) {
+                $backup = "$tmp.bak"
+                try {
+                    [IO.File]::Replace($tmp, $Path, $backup)
+                }
+                finally {
+                    if ([IO.File]::Exists($backup)) {
+                        [IO.File]::Delete($backup)
+                    }
+                }
+            }
+            else {
+                [IO.File]::Move($tmp, $Path)
+            }
             return
         }
         catch [System.IO.IOException], [System.UnauthorizedAccessException] {

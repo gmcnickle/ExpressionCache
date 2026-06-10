@@ -13,20 +13,6 @@ if (-not $script:StateLock) {
     $script:StateLock = New-Object System.Threading.ReaderWriterLockSlim([System.Threading.LockRecursionPolicy]::NoRecursion)
 }
 
-# Per-key single-flight gates for Get-OrCreate
-if (-not $script:KeyLocks) {
-    $script:KeyLocks = New-Object 'System.Collections.Concurrent.ConcurrentDictionary[string, System.Threading.SemaphoreSlim]'
-}
-
-function script:Get-KeyGate {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Key
-    )
-
-    $script:KeyLocks.GetOrAdd($Key, { New-Object System.Threading.SemaphoreSlim(1, 1) })
-}
-
 function script:With-ReadLock {
     param(
         [scriptblock]$Body
