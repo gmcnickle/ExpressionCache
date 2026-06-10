@@ -30,6 +30,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - Redis distributed locks now use the intended namespaced cache key instead of an empty key.
 - Provider lock operations no longer shadow a caller's `$ScriptBlock` variable.
 - Automatic cache keys now use OS-independent argument serialization.
+- Internal provider lookup now works consistently under Windows PowerShell 5.1.
 - Local filesystem cache writes could briefly remove the destination before replacing it.
 
 ## [0.3.1] - 2026-04-16

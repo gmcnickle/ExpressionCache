@@ -22,10 +22,8 @@ function Get-ExpressionCacheProvider {
         [string]$ProviderName
     )
 
-    $result = With-ReadLock {
-        if ($ProviderName -and $script:RegisteredStorageProviders.Contains($ProviderName)) {
-            $script:RegisteredStorageProviders[$ProviderName]
-        }
+    $result = if ($ProviderName) {
+        Find-ExpressionCacheProvider -ProviderName $ProviderName
     }
 
     if ($null -ne $result) {

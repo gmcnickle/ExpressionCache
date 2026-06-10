@@ -328,7 +328,7 @@ function script:Get-ProviderConfigs {
 
   Context 'Clear-ExpressionCache' {
     It 'calls provider ClearCache with -Force' {
-      Mock -ModuleName ExpressionCache Get-ExpressionCacheProvider { @{ Name = 'Fake' } }
+      Mock -ModuleName ExpressionCache Find-ExpressionCacheProvider { @{ Name = 'Fake' } }
       Mock -ModuleName ExpressionCache Invoke-ExpressionCacheProviderHook { } -Verifiable
       Clear-ExpressionCache -ProviderName 'Fake' -Force -Confirm:$false
       Assert-MockCalled -ModuleName ExpressionCache Invoke-ExpressionCacheProviderHook -Times 1 -ParameterFilter {
@@ -337,7 +337,7 @@ function script:Get-ProviderConfigs {
     }
 
     It 'honors -WhatIf (no hook call)' {
-      Mock -ModuleName ExpressionCache Get-ExpressionCacheProvider { @{ Name = 'Fake' } }
+      Mock -ModuleName ExpressionCache Find-ExpressionCacheProvider { @{ Name = 'Fake' } }
       Mock -ModuleName ExpressionCache Invoke-ExpressionCacheProviderHook { } -Verifiable
       Clear-ExpressionCache -ProviderName 'Fake' -Force -WhatIf
       Assert-MockCalled -ModuleName ExpressionCache Invoke-ExpressionCacheProviderHook -Times 0

@@ -256,7 +256,7 @@ function Close-Redis-Cache {
         [string]$ProviderName
     )
 
-    $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName -ErrorAction Ignore
+    $provider = Find-ExpressionCacheProvider -ProviderName $ProviderName
     if (-not $provider) {
         return
     }

@@ -71,7 +71,7 @@ function Remove-ExpressionCacheProvider {
     begin { $removed = @() }
 
     process {
-        $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName -ErrorAction Ignore
+        $provider = Find-ExpressionCacheProvider -ProviderName $ProviderName
 
         if (-not $provider) {
             Write-Error -Message "ExpressionCache: Provider '$ProviderName' is not registered." `

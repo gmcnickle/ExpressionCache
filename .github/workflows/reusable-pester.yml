@@ -29,9 +29,13 @@ jobs:
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
           }
           if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
-            Register-PSRepository -Default
+            Register-PSRepository `
+              -Name PSGallery `
+              -SourceLocation 'https://www.powershellgallery.com/api/v2' `
+              -InstallationPolicy Trusted
+          } else {
+            Set-PSRepository PSGallery -InstallationPolicy Trusted
           }
-          Set-PSRepository PSGallery -InstallationPolicy Trusted
           Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
           $settings = '.pssa/PSScriptAnalyzerSettings.psd1'
           $findings = Invoke-ScriptAnalyzer -Path . -Settings $settings -Recurse -Severity Error

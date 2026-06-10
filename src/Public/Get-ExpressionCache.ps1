@@ -137,7 +137,7 @@ function Get-ExpressionCache {
       }
     }
 
-    $strategy = Get-ExpressionCacheProvider -ProviderName $ProviderName -ErrorAction Ignore
+    $strategy = Find-ExpressionCacheProvider -ProviderName $ProviderName
 
     if (-not $strategy) {
       throw "Provider '$ProviderName' not registered."

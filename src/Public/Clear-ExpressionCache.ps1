@@ -49,7 +49,7 @@ function Clear-ExpressionCache {
     [switch]$Force
   )
 
-  $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName -ErrorAction Ignore
+  $provider = Find-ExpressionCacheProvider -ProviderName $ProviderName
   if (-not $provider) {
     throw "ExpressionCache: Provider '$ProviderName' not registered."
   }
