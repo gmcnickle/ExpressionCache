@@ -304,7 +304,7 @@ function Get-Redis-CachedValue {
                 return (Read-CacheValue $raw)
             }
 
-            $lockKey = "$rkey:__lock"
+            $lockKey = "${rkey}:__lock"
             $lockToken = [Guid]::NewGuid().ToString('N')
             $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $WaitSeconds))
             $lockTtlMs = [Math]::Max(5000, ([Math]::Max(1, $LockSeconds) * 1000))

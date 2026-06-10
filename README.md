@@ -160,7 +160,7 @@ $userProfile
 - `Get-ProviderStateValue -Provider <object> [-Key <string>] [-Default <object>]`
 - `Set-ProviderStateValue -Provider <object> -Key <string> -Value <object>`
 - `Set-ProviderStateValues -Provider <object> -Patch <hashtable> [-NonAtomic]`
-- `Invoke-ProviderLockedOperation -Provider <object> -ScriptBlock <scriptblock>`
+- `Invoke-ProviderLockedOperation -Provider <object> -Operation <scriptblock>`
 
 Commands that accept `-ProviderName` also accept `-Name` as an alias. A specifically requested provider that is not registered writes an `ObjectNotFound` error; use `-ErrorAction SilentlyContinue` for optional lookup.
 

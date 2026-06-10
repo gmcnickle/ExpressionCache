@@ -36,6 +36,26 @@ Describe 'Invoke-ProviderLockedOperation' {
         }
     }
 
+    It 'does not shadow a ScriptBlock variable used by the operation' {
+        InModuleScope ExpressionCache {
+            $spec = @{
+                Name        = 'LockScope'
+                GetOrCreate = 'Get-LocalFileSystem-CachedValue'
+                Config      = [pscustomobject]@{}
+            }
+
+            Add-ExpressionCacheProvider -Provider $spec | Out-Null
+            $p = Get-ExpressionCacheProvider -ProviderName 'LockScope'
+            $ScriptBlock = { 42 }
+
+            $result = Invoke-ProviderLockedOperation -Provider $p -Operation {
+                & $ScriptBlock
+            }
+
+            $result | Should -Be 42
+        }
+    }
+
     It 'releases the lock even when the body throws' {
         InModuleScope ExpressionCache {
             $spec = @{

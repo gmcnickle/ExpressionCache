@@ -5,19 +5,20 @@ function Invoke-ProviderLockedOperation {
         $Provider,
 
         [Parameter(Mandatory, Position = 0)]
-        [scriptblock]$ScriptBlock
+        [Alias('ScriptBlock')]
+        [scriptblock]$Operation
     )
 
     $l = Get-ProviderLock $Provider
     if ($l.IsWriteLockHeld) {
-        & $ScriptBlock
+        & $Operation
         return
     }
 
     $l.EnterWriteLock()
 
     try {
-        & $ScriptBlock
+        & $Operation
     }
     finally {
         $l.ExitWriteLock()

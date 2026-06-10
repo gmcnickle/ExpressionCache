@@ -81,6 +81,7 @@ Describe 'Redis concurrency controls' {
             $unlockCommand = $script:commands | Where-Object { $_[0] -eq 'EVAL' } | Select-Object -First 1
             $lockCommand | Should -Not -BeNullOrEmpty
             $unlockCommand | Should -Not -BeNullOrEmpty
+            $lockCommand[1] | Should -Be 'test:miss:__lock'
             $unlockCommand[-1] | Should -Be $lockCommand[2]
         }
     }
