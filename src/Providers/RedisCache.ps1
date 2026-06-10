@@ -157,7 +157,7 @@ function Get-RedisClient {
 
     # Optional force recreation: dispose & clear under provider write lock
     if ($ForceRecreate) {
-        With-ProviderLock $provider {
+        Invoke-ProviderLockedOperation -Provider $provider {
             $old = Get-ProviderStateValue -Provider $provider -Key 'Client'
             if ($old -and ($old.PSObject.Methods.Name -contains 'Dispose')) { $old.Dispose() }
             $provider.State['Client'] = $null
@@ -174,7 +174,7 @@ function Get-RedisClient {
     # Single-flight init gate stored in state
     $gate = Get-ProviderStateValue -Provider $provider -Key '__ClientInitGate'
     if (-not $gate) {
-        With-ProviderLock $provider {
+        Invoke-ProviderLockedOperation -Provider $provider {
             $existing = Get-ProviderStateValue -Provider $provider -Key '__ClientInitGate'
             if (-not $existing) {
                 $existing = New-Object System.Threading.SemaphoreSlim(1, 1)
@@ -238,7 +238,7 @@ function Use-RedisClient {
     $null = Get-RedisClient -ProviderName $ProviderName
     $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
     $clientBody = $Body
-    With-ProviderLock $provider {
+    Invoke-ProviderLockedOperation -Provider $provider {
         $client = Get-ProviderStateValue -Provider $provider -Key 'Client'
 
         if (-not $client) {
@@ -246,6 +246,29 @@ function Use-RedisClient {
         }
 
         & $clientBody $client
+    }
+}
+
+function Close-Redis-Cache {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProviderName
+    )
+
+    $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName -ErrorAction Ignore
+    if (-not $provider) {
+        return
+    }
+
+    Invoke-ProviderLockedOperation -Provider $provider {
+        $client = Get-ProviderStateValue -Provider $provider -Key 'Client'
+        if ($client -and ($client.PSObject.Methods.Name -contains 'Dispose')) {
+            $client.Dispose()
+        }
+
+        $provider.State['Client'] = $null
+        $provider.State['Initialized'] = $false
     }
 }
 
@@ -441,7 +464,7 @@ function Invoke-RedisRaw {
     if ($stream.ReadTimeout -eq 0) { $stream.ReadTimeout = 10000 }
     if ($stream.WriteTimeout -eq 0) { $stream.WriteTimeout = 10000 }
 
-    With-ProviderLock -Provider $provider {
+    Invoke-ProviderLockedOperation -Provider $provider {
         $ascii = [Text.Encoding]::ASCII
         $utf8 = [Text.Encoding]::UTF8
         $crlf = $ascii.GetBytes("`r`n")

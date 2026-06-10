@@ -100,6 +100,7 @@ about_CommonParameters
 function Get-ExpressionCache {
   [CmdletBinding(DefaultParameterSetName = 'ByMaxAge')]
   param(
+    [Alias('Name')]
     [string]$ProviderName,
 
     [Parameter(Mandatory)]
@@ -136,7 +137,7 @@ function Get-ExpressionCache {
       }
     }
 
-    $strategy = Get-ExpressionCacheProvider -ProviderName $ProviderName -NoFallback
+    $strategy = Get-ExpressionCacheProvider -ProviderName $ProviderName -ErrorAction Ignore
 
     if (-not $strategy) {
       throw "Provider '$ProviderName' not registered."

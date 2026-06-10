@@ -15,11 +15,12 @@ PSCustomObject (provider), or $null if not found.
 .EXAMPLE
 Get-ExpressionCacheProvider -ProviderName 'LocalFileSystemCache'
 #>
-function Get-ExpressionCacheProvider { 
+function Get-ExpressionCacheProvider {
+    [CmdletBinding()]
     param(
-        [string]$ProviderName,
-        [switch]$NoFallback
-    ) 
+        [Alias('Name')]
+        [string]$ProviderName
+    )
 
     $result = With-ReadLock {
         if ($ProviderName -and $script:RegisteredStorageProviders.Contains($ProviderName)) {
@@ -31,9 +32,12 @@ function Get-ExpressionCacheProvider {
         return $result
     }
 
-    # When a specific name was requested but not found, warn and return $null
+    # A specifically requested resource follows normal Get-* semantics:
+    # write a non-terminating error and return no object.
     if ($ProviderName) {
-        Write-Warning "ExpressionCache: provider '$ProviderName' is not registered."
+        Write-Error -Message "ExpressionCache: Provider '$ProviderName' is not registered." `
+            -Category ObjectNotFound `
+            -TargetObject $ProviderName
         return
     }
 

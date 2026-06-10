@@ -15,6 +15,11 @@ on:
           pull the section for the new version from CHANGELOG.md.
         required: false
         type: string
+      prerelease:
+        description: Optional prerelease label, such as beta1 or rc1. Leave blank for a stable release.
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write  # required to push commits/tags and create releases
@@ -30,8 +35,14 @@ jobs:
         shell: pwsh
         run: |
           if (Test-Path "$PWD/tests") {
-            Install-Module Pester -Force -Scope CurrentUser
-            Invoke-Pester -CI
+            Set-PSRepository PSGallery -InstallationPolicy Trusted
+            Install-Module Pester -MinimumVersion 5.7.1 -Scope CurrentUser -Force
+            Import-Module Pester -MinimumVersion 5.7.1
+
+            $config = New-PesterConfiguration
+            $config.Run.Path = 'tests'
+            $config.Run.Exit = $true
+            Invoke-Pester -Configuration $config
           } else {
             Write-Host "No tests/ folder found. Skipping."
           }
@@ -43,6 +54,7 @@ jobs:
       BUMP_PART: ${{ github.event.inputs.bump }}
       PSD1_PATH: src/ExpressionCache.psd1
       MANUAL_NOTES: ${{ github.event.inputs.notes }}
+      PRERELEASE: ${{ github.event.inputs.prerelease }}
     steps:
       - name: Checkout (full history for tags)
         uses: actions/checkout@v4
@@ -75,10 +87,14 @@ jobs:
           $root = if ($manifest.RootModule) { $manifest.RootModule } else { 'ExpressionCache.psm1' }
           $fx   = if ($manifest.FunctionsToExport -and $manifest.FunctionsToExport.Count) { $manifest.FunctionsToExport } else { '*' }
 
-          # Read prerelease from PSData if present
-          $prerelease = ''
-          $psData = $manifest.PrivateData.PSData
-          if ($psData -and $psData.Prerelease) { $prerelease = $psData.Prerelease }
+          # The workflow input is authoritative. A blank value creates a stable release
+          # and must remove any prerelease label left in the source manifest.
+          $prerelease = "${{ env.PRERELEASE }}".Trim()
+          if (-not $prerelease) {
+            $content = Get-Content $psd1
+            $content = $content | Where-Object { $_ -notmatch '^\s*Prerelease\s*=' }
+            Set-Content -Path $psd1 -Value $content -Encoding utf8
+          }
 
           $updateParams = @{
             Path               = $psd1
@@ -88,12 +104,28 @@ jobs:
             CmdletsToExport    = @()
             AliasesToExport    = @()
           }
-          if ($prerelease) { $updateParams['Prerelease'] = $prerelease }
+          if ($prerelease) {
+            $updateParams['Prerelease'] = $prerelease
+          }
           Update-ModuleManifest @updateParams
 
           $fullVersion = if ($prerelease) { "$new-$prerelease" } else { "$new" }
           "newVersion=$new" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "fullVersion=$fullVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          # Promote the prepared Unreleased notes into a dated release section.
+          if (Test-Path 'CHANGELOG.md') {
+            $lines = Get-Content 'CHANGELOG.md'
+            $versionPattern = "^##\s+\[?$([regex]::Escape([string]$new))\]?"
+            $hasVersionSection = $lines | Select-String -Pattern $versionPattern -Quiet
+            if (-not $hasVersionSection) {
+              $unreleasedIndex = [Array]::IndexOf($lines, '## [Unreleased]')
+              if ($unreleasedIndex -ge 0) {
+                $lines[$unreleasedIndex] = "## [$new] - $(Get-Date -Format 'yyyy-MM-dd')"
+                Set-Content -Path 'CHANGELOG.md' -Value $lines -Encoding utf8
+              }
+            }
+          }
 
       - name: Extract notes from CHANGELOG.md (if no manual notes)
         id: changelog
@@ -110,7 +142,11 @@ jobs:
             $lines = Get-Content CHANGELOG.md
             $match = $lines | Select-String -Pattern $pattern | Select-Object -First 1
             if (-not $match) {
-              Write-Host "No changelog section found for $ver; using fallback."
+              Write-Host "No changelog section found for $ver; checking Unreleased."
+              $match = $lines | Select-String -Pattern '^##\s+\[Unreleased\]\s*$' | Select-Object -First 1
+            }
+            if (-not $match) {
+              Write-Host "No changelog section found for $ver or Unreleased; using fallback."
               $body = "Automated release $ver."
             } else {
               $startIndex = $match.LineNumber - 1
@@ -138,7 +174,7 @@ jobs:
           git config user.name  "github-actions"
           git config user.email "actions@github.com"
 
-          git add "${{ env.PSD1_PATH }}"
+          git add "${{ env.PSD1_PATH }}" CHANGELOG.md
           git commit -m "chore(release): bump version to ${{ steps.bump.outputs.fullVersion }} [skip ci]" || echo "No changes to commit."
 
           $branch = "${{ github.ref_name }}"
@@ -154,6 +190,7 @@ jobs:
           MANUAL_NOTES: ${{ env.MANUAL_NOTES }}
           CHANGELOG_BODY: ${{ steps.changelog.outputs.body }}
           NEW_VERSION: ${{ steps.bump.outputs.newVersion }}
+          FULL_VERSION: ${{ steps.bump.outputs.fullVersion }}
           PSD1_PATH: ${{ env.PSD1_PATH }}
         shell: pwsh
         run: |
@@ -171,7 +208,7 @@ jobs:
           # Safety cap for Gallery/NuGet release notes (multi-line supported)
           $max = 32000
           if ($notes.Length -gt $max) {
-            $releaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/v$env:NEW_VERSION"
+            $releaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/v$env:FULL_VERSION"
             $suffix = "`n`n[...truncated — see full notes: $releaseUrl]"
             $notes = $notes.Substring(0, $max - $suffix.Length).TrimEnd() + $suffix
           }

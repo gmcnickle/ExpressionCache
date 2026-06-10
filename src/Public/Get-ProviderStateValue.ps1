@@ -4,7 +4,7 @@ function Get-ProviderStateValue {
         [object]$Default = $null
     )
 
-    With-ProviderLock $Provider {
+    Invoke-ProviderLockedOperation -Provider $Provider {
         $out = $null
         if ($Provider.State -and $Provider.State.TryGetValue($Key, [ref]$out)) {
             return $out

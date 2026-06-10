@@ -43,7 +43,8 @@ function Get-DefaultProviders {
             }
             GetOrCreate = 'Get-Redis-CachedValue'
             Initialize  = 'Initialize-Redis-Cache'
-            ClearCache  = 'Clear-Redis-Cache'             
+            ClearCache  = 'Clear-Redis-Cache'
+            Teardown    = 'Close-Redis-Cache'
         }
     }
 

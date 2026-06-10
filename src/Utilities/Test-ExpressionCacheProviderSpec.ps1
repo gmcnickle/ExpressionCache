@@ -4,8 +4,8 @@ Validates a single ExpressionCache provider spec and normalizes it to a hashtabl
 
 .DESCRIPTION
 Enforces the strict provider descriptor contract used by Initialize-ExpressionCache:
-- Spec must include Name (string), GetOrCreate (string or scriptblock), and Config (hashtable/IDictionary).
-- Optional Initialize and Clear must be a function name (string) or a scriptblock if present.
+- Spec must include Name (string), GetOrCreate (command-name string), and Config (hashtable/IDictionary).
+- Optional Initialize, ClearCache, and Teardown hooks must be command-name strings.
 - Function-name strings are validated with Get-Command -Name <string>.
 - Returns a normalized **hashtable** (not PSCustomObject).
 
@@ -14,7 +14,7 @@ Provider descriptor to validate. Accepts hashtable, ordered hashtable, or PSCust
 
 .OUTPUTS
 [hashtable]
-A normalized provider spec (Name, GetOrCreate, [Initialize], [ClearCache], Config as hashtable).
+A normalized provider spec (Name, GetOrCreate, [Initialize], [ClearCache], [Teardown], Config as hashtable).
 
 .EXAMPLE
 $spec = @{
@@ -55,26 +55,30 @@ function Test-ExpressionCacheProviderSpec {
         throw "ExpressionCache: Provider spec must be a hashtable/IDictionary or PSCustomObject. Got: $($InputObject.GetType().FullName)"
     }
 
-    function Ensure-Functor {
+    function Confirm-HookCommand {
         param(
             [Parameter(Mandatory)][object]$Value,
             [Parameter(Mandatory)][string]$PropName,
             [Parameter(Mandatory)][string]$ProviderName
         )
-        if ($Value -is [scriptblock]) { return }  # silent success
 
-        if ($Value -is [string]) {
-            if ([string]::IsNullOrWhiteSpace($Value)) {
-                throw "ExpressionCache: Provider '$ProviderName': '$PropName' cannot be empty."
-            }
-            # Verify function exists (search all scopes, not just module scope)
-            if (-not (Get-Command -Name $Value -ErrorAction SilentlyContinue)) {
-                Write-Warning "ExpressionCache: Provider '$ProviderName': command '$Value' (from '$PropName') not found in current scope. It must be available at call time."
-            }
-            return  # silent success
+        if ($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value)) {
+            throw "ExpressionCache: Provider '$ProviderName': '$PropName' must be a non-empty command-name string."
         }
 
-        throw "ExpressionCache: Provider '$ProviderName': '$PropName' must be a function name (string) or a scriptblock. Got: $($Value.GetType().FullName)"
+        $command = Get-Command -Name $Value -CommandType Function, Cmdlet, ExternalScript -ErrorAction SilentlyContinue
+        if (-not $command) {
+            Write-Warning "ExpressionCache: Provider '$ProviderName': command '$Value' (from '$PropName') was not found in the current scope. It must be available at call time."
+            return
+        }
+
+        if ($PropName -eq 'GetOrCreate') {
+            foreach ($requiredParameter in 'Key', 'ScriptBlock') {
+                if (-not $command.Parameters.ContainsKey($requiredParameter)) {
+                    throw "ExpressionCache: Provider '$ProviderName': GetOrCreate command '$Value' must declare a '$requiredParameter' parameter."
+                }
+            }
+        }
     }
 
     # Normalize to plain hashtable (and strip accidental array wrappers)
@@ -92,10 +96,10 @@ function Test-ExpressionCacheProviderSpec {
     $name = [string]$specHt['Name']
 
     # Validate functors (silent on success)
-    Ensure-Functor -Value $specHt['GetOrCreate'] -PropName 'GetOrCreate' -ProviderName $name
-    foreach ($opt in 'Initialize','Clear') {
+    Confirm-HookCommand -Value $specHt['GetOrCreate'] -PropName 'GetOrCreate' -ProviderName $name
+    foreach ($opt in 'Initialize', 'ClearCache', 'Teardown') {
         if ($specHt.Keys -contains $opt -and $null -ne $specHt[$opt]) {
-            Ensure-Functor -Value $specHt[$opt] -PropName $opt -ProviderName $name
+            Confirm-HookCommand -Value $specHt[$opt] -PropName $opt -ProviderName $name
         }
     }
 

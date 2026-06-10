@@ -8,7 +8,7 @@ function Set-ProviderState {
     foreach ($k in $NewState.Keys) {
         $null = $dict.TryAdd($k, $NewState[$k])
     }
-    With-ProviderLock $Provider {
+    Invoke-ProviderLockedOperation -Provider $Provider {
         $Provider.State = $dict
         Update-ProviderStateMeta $Provider
     }

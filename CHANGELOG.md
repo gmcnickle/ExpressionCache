@@ -12,9 +12,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - Redis concurrency tests covering lock acquisition, token-safe release, and client lease synchronization.
 
 ### Changed
+- Prepared the public contract for 1.0:
+  - Provider hooks are command-name strings with canonical `Initialize`, `GetOrCreate`, `ClearCache`, and `Teardown` properties.
+  - `GetOrCreate` commands must declare `Key` and `ScriptBlock`; `ProviderName`, `Arguments`, `Policy`, and `CacheVersion` are standard optional inputs.
+  - `With-ProviderLock` was renamed to `Invoke-ProviderLockedOperation`.
+  - `ProviderName` is the canonical parameter name, with `Name` retained as an alias.
+  - Missing provider lookups now use the PowerShell error stream and support common `-ErrorAction` behavior.
+  - Module exports are explicitly listed in the manifest.
+  - The automatic cache-key algorithm is treated as stable throughout the 1.x release line.
 - Redis access using a shared provider client is synchronized for connection safety.
 - Provider state reads and writes now participate consistently in provider locking.
 - Local filesystem cache replacement is atomic during concurrent writes.
+- The default Redis namespace changes from `v0` to `v1` when the module version advances to 1.0.
 
 ### Fixed
 - Concurrent cache misses across runspaces or processes could execute the same expression more than once.

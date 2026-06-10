@@ -5,13 +5,13 @@ function Invoke-ExpressionCacheProviderHook {
         [string]$ProviderName,
 
         [Parameter(Mandatory)]
-        [ValidateSet('ClearCache', 'GetOrCreate', 'Initialize')]
+        [ValidateSet('ClearCache', 'GetOrCreate', 'Initialize', 'Teardown')]
         [string]$Hook,
 
         [hashtable]$Arguments = @{}
     )
 
-    $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName
+    $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName -ErrorAction Ignore
     if (-not $provider) { 
         throw "ExpressionCache: Provider '$ProviderName' not found." 
     }
@@ -23,12 +23,17 @@ function Invoke-ExpressionCacheProviderHook {
         return $false 
     }
 
-    $fn = Get-Item -LiteralPath ("Function:{0}" -f $fnName) -ErrorAction SilentlyContinue
-    if (-not $fn) { 
-        throw "ExpressionCache: Hook '$Hook' for provider '$ProviderName' points to '$fnName', but the function was not found." 
+    $command = Get-Command -Name $fnName -CommandType Function, Cmdlet, ExternalScript -ErrorAction SilentlyContinue
+    if (-not $command) {
+        throw "ExpressionCache: Hook '$Hook' for provider '$ProviderName' points to '$fnName', but the function was not found."
     }
 
-    & $fn @Arguments
+    $splat = New-CallableSplat -CommandName $fnName `
+        -Config $provider.Config `
+        -Arguments $Arguments `
+        -PreferArgs
+
+    & $fnName @splat
 
     return $true
 }

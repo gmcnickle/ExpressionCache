@@ -51,12 +51,21 @@ Describe 'Get-ExpressionCacheProvider' {
         }
     }
 
-    It 'returns $null with -NoFallback when provider does not exist' {
-        $result = Get-ExpressionCacheProvider -ProviderName 'NeverRegistered' -NoFallback
+    It 'writes a non-terminating error when provider does not exist' {
+        $errors = @()
+        $result = Get-ExpressionCacheProvider -ProviderName 'NeverRegistered' -ErrorVariable +errors
         $result | Should -BeNullOrEmpty
+        $errors | Should -HaveCount 1
+        $errors[0].CategoryInfo.Category | Should -Be 'ObjectNotFound'
     }
 
-    It 'returns $null and warns when provider name is not found' {
+    It 'supports ErrorAction Stop for a missing provider' {
+        {
+            Get-ExpressionCacheProvider -ProviderName 'NeverRegistered' -ErrorAction Stop
+        } | Should -Throw
+    }
+
+    It 'supports quiet optional lookup with ErrorAction SilentlyContinue' {
         InModuleScope ExpressionCache {
             Add-ExpressionCacheProvider -Provider @{
                 Name        = 'FallbackTest'
@@ -64,8 +73,20 @@ Describe 'Get-ExpressionCacheProvider' {
                 Config      = [pscustomobject]@{}
             } | Out-Null
 
-            $result = Get-ExpressionCacheProvider -ProviderName 'DoesNotExist' -WarningAction SilentlyContinue
+            $result = Get-ExpressionCacheProvider -ProviderName 'DoesNotExist' -ErrorAction SilentlyContinue
             $result | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'accepts Name as an alias for ProviderName' {
+        InModuleScope ExpressionCache {
+            Add-ExpressionCacheProvider -Provider @{
+                Name        = 'AliasLookup'
+                GetOrCreate = 'Get-LocalFileSystem-CachedValue'
+                Config      = [pscustomobject]@{}
+            } | Out-Null
+
+            (Get-ExpressionCacheProvider -Name 'AliasLookup').Name | Should -Be 'AliasLookup'
         }
     }
 }

@@ -63,31 +63,23 @@ function global:Get-OrCreate-InMemory-Cache {
         [string]$ProviderName,
         [scriptblock]$ScriptBlock,
         [object[]]$Arguments,
-        $CachePolicy,
+        $Policy,
         [string]$CacheVersion
     )
 
     $fqKey = (Get-IM-Key $Key $CacheVersion)
     $now   = [DateTime]::UtcNow
 
-    $force = $false
     $ttl   = $script:IM_DefaultTtl
 
-    if ($null -ne $CachePolicy) {
-        if ($CachePolicy.PSObject.Properties.Match('ForceRefresh').Count -gt 0) {
-            $force = [bool]$CachePolicy.ForceRefresh
-        }
-        if ($CachePolicy.PSObject.Properties.Match('MaxAge').Count -gt 0 -and $CachePolicy.MaxAge -is [TimeSpan]) {
-            $ttl = [TimeSpan]$CachePolicy.MaxAge
-        }
+    if ($null -ne $Policy -and $Policy.TtlSeconds -gt 0) {
+        $ttl = [TimeSpan]::FromSeconds($Policy.TtlSeconds)
     }
 
-    if (-not $force) {
-        [object]$existing = $null                # <-- predeclare for StrictMode
-        if ($script:IM_Cache.TryGetValue($fqKey, [ref]$existing)) {
-            if (-not (Test-IM-Expired $fqKey $now)) {
-                return $existing
-            }
+    [object]$existing = $null
+    if ($script:IM_Cache.TryGetValue($fqKey, [ref]$existing)) {
+        if (-not (Test-IM-Expired $fqKey $now)) {
+            return $existing
         }
     }
 
@@ -95,12 +87,10 @@ function global:Get-OrCreate-InMemory-Cache {
     $sem = $script:IM_Locks.GetOrAdd($fqKey, { [SemaphoreSlim]::new(1, 1) })
     $null = $sem.Wait()
     try {
-        if (-not $force) {
-            [object]$val2 = $null               # <-- predeclare for StrictMode
-            if ($script:IM_Cache.TryGetValue($fqKey, [ref]$val2)) {
-                if (-not (Test-IM-Expired $fqKey $now)) {
-                    return $val2
-                }
+        [object]$val2 = $null
+        if ($script:IM_Cache.TryGetValue($fqKey, [ref]$val2)) {
+            if (-not (Test-IM-Expired $fqKey $now)) {
+                return $val2
             }
         }
 

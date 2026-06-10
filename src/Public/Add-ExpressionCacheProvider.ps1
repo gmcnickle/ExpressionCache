@@ -16,15 +16,15 @@ Configuration semantics:
   it is set to $true upon success.
 
 Expected spec shape (examples below):
-- Name or Key (string)     : provider name (e.g., 'LocalFileSystemCache', 'Redis').
+- Name (string)            : provider name (e.g., 'LocalFileSystemCache', 'Redis').
 - Config (PSCustomObject)  : provider configuration.
 - Initialize (string)      : optional function name to prepare backing store.
 - GetOrCreate (string)     : function name used to fetch/create cached values.
 - ClearCache (string)      : optional function name to clear cache state.
+- Teardown (string)        : optional function name invoked before provider removal.
 
 .PARAMETER Provider
 A provider specification (hashtable/PSCustomObject). Accepts pipeline input.
-May use 'Key' instead of 'Name'; it is normalized during validation.
 
 .INPUTS
 System.Object  (provider spec via the pipeline)
@@ -35,7 +35,7 @@ PSCustomObject  (the normalized/registered provider spec)
 .EXAMPLE
 # Register LocalFileSystem provider with explicit functions and config
 Add-ExpressionCacheProvider @{
-  Key        = 'LocalFileSystemCache'
+  Name       = 'LocalFileSystemCache'
   Initialize = 'Initialize-LocalFileSystem-Cache'
   GetOrCreate= 'Get-LocalFileSystem-CachedValue'
   ClearCache = 'Clear-LocalFileSystem-Cache'
@@ -131,11 +131,11 @@ function Add-ExpressionCacheProvider {
           Assert-MandatoryParamsPresent -CommandName $spec.Initialize -Splat $paramSet
           & $spec.Initialize @paramSet
 
-          Set-ProviderStateValue -Provider $Provider -Key 'Initialized' -Value $true
+          Set-ProviderStateValue -Provider $spec -Key 'Initialized' -Value $true
         } 
         catch {
           # Optional: record failure for diagnostics (don’t hold the module lock here)
-          Set-ProviderStateValue -Provider $Provider -Key 'InitializationError' -Value $_.Exception.Message
+          Set-ProviderStateValue -Provider $spec -Key 'InitializationError' -Value $_.Exception.Message
           throw
         }
       }

@@ -19,7 +19,7 @@ function Set-ProviderStateValues {
     }
 
     # Atomic group update
-    With-ProviderLock $Provider {
+    Invoke-ProviderLockedOperation -Provider $Provider {
         foreach ($k in $Patch.Keys) {
             $v = $Patch[$k]
             # Direct indexer set is fine under exclusive lock

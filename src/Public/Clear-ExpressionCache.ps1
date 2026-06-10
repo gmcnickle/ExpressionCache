@@ -44,11 +44,12 @@ function Clear-ExpressionCache {
   [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
   param(
     [Parameter(Mandatory)]
+    [Alias('Name')]
     [string]$ProviderName,
     [switch]$Force
   )
 
-  $provider = Get-ExpressionCacheProvider -Name $ProviderName
+  $provider = Get-ExpressionCacheProvider -ProviderName $ProviderName -ErrorAction Ignore
   if (-not $provider) {
     throw "ExpressionCache: Provider '$ProviderName' not registered."
   }

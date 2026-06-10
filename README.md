@@ -36,7 +36,7 @@
 Lightweight, pluggable caching for PowerShell *expressions* (scriptblocks).  
 Designed for **ease of use** — you can cache the results of *any* expression that outputs data, with minimal configuration. Drop in a `{ ... }`, run once, and let a provider handle freshness, persistence, and lookup automatically.
 
-> ⚡ ExpressionCache is in preview. I’d love early developer feedback — try it out and open issues or discussions!
+> ExpressionCache provides a stable public API for the 1.x release line. Feedback, issues, provider ideas, and real-world use cases are welcome.
 
 ## Table of Contents
 
@@ -144,7 +144,7 @@ $userProfile
 ## Public API
 
 **Core**
-- `Initialize-ExpressionCache -AppName <string> [-Providers <object[]>] [-ReplaceProviders]`
+- `Initialize-ExpressionCache -AppName <string> [-Providers <IDictionary>] [-ReplaceProviders]`
 - `Get-ExpressionCache -ScriptBlock <scriptblock> [-Arguments <object[]>] [-Key <string>] [-ProviderName <string>] [-MaxAge <timespan>]`
 - `Clear-ExpressionCache [-ProviderName <string>] [-Force]`
 - `New-ExpressionCacheKey -ScriptBlock <scriptblock> [-Arguments <object[]>]`
@@ -160,7 +160,9 @@ $userProfile
 - `Get-ProviderStateValue -Provider <object> [-Key <string>] [-Default <object>]`
 - `Set-ProviderStateValue -Provider <object> -Key <string> -Value <object>`
 - `Set-ProviderStateValues -Provider <object> -Patch <hashtable> [-NonAtomic]`
-- `With-ProviderLock -Provider <object> -Body <scriptblock>`
+- `Invoke-ProviderLockedOperation -Provider <object> -ScriptBlock <scriptblock>`
+
+Commands that accept `-ProviderName` also accept `-Name` as an alias. A specifically requested provider that is not registered writes an `ObjectNotFound` error; use `-ErrorAction SilentlyContinue` for optional lookup.
 
 ## Providers
 
@@ -170,29 +172,33 @@ A provider in **ExpressionCache** is represented as a hashtable (or PSCustomObje
 
 ```powershell
 @{
-    Name   = '<unique-provider-name>'  # Identifier used within ExpressionCache
-    Type   = '<ProviderType>'          # Maps to your provider implementation
-    Config = @{
+    Name        = '<unique-provider-name>'
+    Config      = @{
         <key> = <value>                # Provider-specific configuration values
     }
+    GetOrCreate = 'Get-ProviderCachedValue'
+    Initialize  = 'Initialize-Provider' # optional
+    ClearCache  = 'Clear-ProviderCache' # optional
+    Teardown    = 'Close-Provider'      # optional
 }
 ```
 
 - **Name**: Friendly identifier, unique within your cache session.
-- **Type**: The provider type (usually matches the suffix of your Initialize function, e.g. `LocalFileSystemCache`, `RedisCache`).
-- **Config**: Hashtable of configuration options. These are expanded as parameters to the provider's `Initialize-*` function.
+- **Config**: Provider settings passed by name when they match a hook command parameter.
+- **GetOrCreate**: Required command-name string. The command must declare `Key` and `ScriptBlock`.
+- **Initialize**, **ClearCache**, and **Teardown**: Optional command-name strings.
 
-When you call `Initialize-ExpressionCache`, the framework automatically calls the provider's initialize function, spreading the values in `Config` into its parameter list.
+Hook values must be command names, not scriptblocks. Named commands allow ExpressionCache to inspect parameters, pass only supported values, and report contract errors during registration.
 
 For example:
 
 ```powershell
-function Initialize-LocalFileSystemCache {
+function Initialize-ExampleProvider {
     [CmdletBinding()]
     param(
-        [string]$CacheFolder,
-        [datetime]$MaximumAge,
-        [string]$CacheVersion
+        [string]$ProviderName,
+        [TimeSpan]$DefaultMaxAge,
+        [string]$Endpoint
     )
     # initialization logic
 }
@@ -202,20 +208,21 @@ A provider object for this might look like:
 
 ```powershell
 @{
-    Name   = 'local'
-    Type   = 'LocalFileSystemCache'
+    Name   = 'Example'
     Config = @{
-        CacheFolder = 'C:\Temp\cache'
-        MaximumAge  = (Get-Date).AddDays(-7)
-        CacheVersion = 'v1'
+        ProviderName  = 'Example'
+        DefaultMaxAge = (New-TimeSpan -Hours 1)
+        Endpoint      = 'https://cache.example.test'
     }
+    Initialize  = 'Initialize-ExampleProvider'
+    GetOrCreate = 'Get-ExampleCachedValue'
 }
 ```
 
 When `Initialize-ExpressionCache` is called, ExpressionCache will invoke:
 
 ```powershell
-Initialize-LocalFileSystemCache -CacheFolder 'C:\Temp\cache' -MaximumAge <datetime> -CacheVersion 'v1'
+Initialize-ExampleProvider -ProviderName 'Example' -DefaultMaxAge <timespan> -Endpoint 'https://cache.example.test'
 ```
 
 #### Example: Redis Provider
@@ -239,7 +246,7 @@ What it intentionally omits (and where a production-grade provider might extend)
 - Cluster, Sentinel, or replica support
 
 ```powershell
-function Initialize-RedisCache {
+function Initialize-Redis-Cache {
     param(
         [string]$HostAddress,
         [int]$Port,
@@ -280,7 +287,7 @@ Provider config overrides (merged with defaults):
 
 ### Provider Function Contracts
 
-Providers expose three functions. ExpressionCache wires these up from your provider object and passes `Config` entries as **named parameters**.
+Providers expose one required hook and up to three optional lifecycle hooks. ExpressionCache wires these up from the provider descriptor and passes matching `Config` entries as named parameters.
 
 #### 1) `Initialize-<ProviderType>`
 
@@ -289,29 +296,18 @@ Providers expose three functions. ExpressionCache wires these up from your provi
 **Call pattern:** ExpressionCache calls this once per provider when `Initialize-ExpressionCache` runs.  
 **Parameter binding:** Values from `Provider.Config` are passed as named parameters.
 
-**Example — LocalFileSystem**
+**Example — provider initialization**
 
 ```powershell
-function Initialize-LocalFileSystemCache {
+function Initialize-ExampleProvider {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][string]  $CacheFolder,
-        [Parameter(Mandatory)][datetime]$MaximumAge,
-        [Parameter(Mandatory)][string]  $CacheVersion,
-        [string]$Prefix = ''
+        [Parameter(Mandatory)][string]$ProviderName,
+        [TimeSpan]$DefaultMaxAge = (New-TimeSpan -Hours 1),
+        [string]$Endpoint
     )
 
-    if (-not (Test-Path $CacheFolder)) {
-        New-Item -ItemType Directory -Path $CacheFolder | Out-Null
-    }
-
-    $script:LocalFS_State = @{
-        CacheFolder  = $CacheFolder
-        MaximumAge   = $MaximumAge
-        CacheVersion = $CacheVersion
-        Prefix       = $Prefix
-        Initialized  = $true
-    }
+    # Validate configuration and prepare provider resources.
 }
 ```
 
@@ -319,7 +315,9 @@ function Initialize-LocalFileSystemCache {
 
 **Purpose:** Return a cached value for `Key` if fresh; otherwise compute via `ScriptBlock` + `Arguments`, persist, and return.
 
-**Required params:** `Key`, `ScriptBlock`, `Arguments` (optional), plus config values.  
+**Required parameters:** `Key`, `ScriptBlock`.
+
+**Standard optional parameters:** `ProviderName`, `Arguments`, `Policy`, and `CacheVersion`. A provider only needs to declare the optional parameters it uses. Provider-specific parameters may also be populated from `Config`.
 **Return:** The computed or cached value.
 
 **Example — LocalFileSystem**
@@ -334,7 +332,7 @@ function Get-LocalFileSystem-CachedValue {
         [Alias('ArgumentList')][object[]]   $Arguments,
 
         [Parameter(Mandatory)][string]      $CacheFolder,
-        [Parameter(Mandatory)][CachePolicy] $Policy,
+        [Parameter(Mandatory)]              $Policy,
         [Parameter(Mandatory)][string]      $CacheVersion
     )
 
@@ -358,7 +356,7 @@ function Get-LocalFileSystem-CachedValue {
 
 #### 3) `Clear-<ProviderType>-Cache`
 
-**Purpose:** Remove cached entries (by key or all). Used by `Clear-ExpressionCache`.
+**Purpose:** Remove all cached entries owned by the provider. Used by `Clear-ExpressionCache`.
 
 **Example — LocalFileSystem**
 
@@ -367,19 +365,27 @@ function Clear-LocalFileSystem-Cache {
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)][string]$ProviderName,
-        [string]$Key,
         [switch]$Force
     )
 
     if ($PSCmdlet.ShouldProcess("LocalFileSystemCache:$ProviderName","Clear cache")) {
-        if ($Key) {
-            Remove-LocalFS-Entry -Key $Key -Force:$Force
-        } else {
-            Remove-LocalFS-All -Force:$Force
-        }
+        Remove-LocalFS-All -Force:$Force
     }
 }
 ```
+
+#### 4) `Teardown`
+
+**Purpose:** Release provider resources before `Remove-ExpressionCacheProvider` removes the provider. This hook is optional.
+
+```powershell
+function Close-ExampleProvider {
+    param([string]$ProviderName)
+    # Dispose clients, close streams, or release other provider resources.
+}
+```
+
+Teardown failures are written as verbose diagnostics and do not prevent provider removal.
 
 #### Best Practices
 
@@ -396,12 +402,13 @@ $provider = [ordered]@{
   Description = 'Stores cached values in the local file system.'
   Version     = '1.0.0'
   Config      = [ordered]@{
-    CacheFolder  = "$env:LOCALAPPDATA\ExpressionCache\MyApp"
-    MaximumAge   = (Get-Date).AddDays(-7)
-    CacheVersion = '1'
-    Prefix       = 'expr:'
+    ProviderName  = 'LocalFileSystemCache'
+    CacheFolder   = "$env:LOCALAPPDATA\ExpressionCache\MyApp"
+    DefaultMaxAge = (New-TimeSpan -Days 1)
+    CacheVersion  = '1'
+    JsonDepth     = 10
   }
-  Initialize  = 'Initialize-LocalFileSystemCache'
+  Initialize  = 'Initialize-LocalFileSystem-Cache'
   GetOrCreate = 'Get-LocalFileSystem-CachedValue'
   ClearCache  = 'Clear-LocalFileSystem-Cache'
 }
@@ -410,7 +417,7 @@ Add-ExpressionCacheProvider -Provider $provider
 
 Providers included today:
 - **LocalFileSystemCache** – file-based persistence with cross-process coordination for same-key cache misses.
-- **RedisCache** – dependency-free Redis provider with native RESP protocol support, suitable for single-instance deployments and as a reference for building custom remote providers.
+- **Redis** – dependency-free Redis provider with native RESP protocol support, suitable for single-instance deployments and as a reference for building custom remote providers.
 
 ### Writing Executors
 
@@ -419,6 +426,7 @@ In ExpressionCache, an *executor* is the `ScriptBlock` you pass to `Get-Expressi
 
 #### Why parameterize your executor?
 - **Cache stability** — the cache key derives from the executor + arguments.
+- **1.x key compatibility** — the automatic key algorithm is stable throughout the 1.x release line. An incompatible algorithm change requires a new major version.
 - **Isolation** — avoids closure/scope bugs from `$script:` or `$global:`.
 - **Testability** — parameterized executors are easier to reason about.
 
@@ -508,7 +516,8 @@ tests/
   Remove-ExpressionCacheProvider.Tests.ps1
   Set-ProviderConfig.Tests.ps1
   Set-ProviderStateValues.Tests.ps1
-  With-ProviderLock.Tests.ps1
+  Invoke-ProviderLockedOperation.Tests.ps1
+  PublicContract.Tests.ps1
   support/
     Common.ps1
   run-tests.ps1
@@ -519,7 +528,7 @@ tests/
 - **Ease of use:** cache results from any expression with minimal config.  
 - **Single source of truth:** provider settings live in `Config`.  
 - **Explicit execution:** call sites pass a scriptblock; providers choose how to cache.  
-- **Thread-safe:** ReaderWriterLockSlim for provider state, per-key SemaphoreSlim gates for single-flight cache operations.  
+- **Thread-safe:** synchronized provider state and cross-process same-key coordination for built-in persistent providers.
 - **Safety:** avoids `Invoke-Expression`; favors parameters over ambient variables.  
 - **Extensible:** add providers (Redis, S3, memory, …) by implementing `GetOrCreate`.
 
@@ -533,11 +542,13 @@ ExpressionCache is designed to be **provider-agnostic**. You can add new provide
    - `GetOrCreate` (required)
    - `Initialize` (optional)
    - `ClearCache` (optional but recommended)
+   - `Teardown` (optional)
 
 2. Implement the provider functions (see [Provider Function Contracts](#provider-function-contracts)):
    - `Initialize-<ProviderType>` — setup and validate config
    - `GetOrCreate` — return or compute/persist values
    - `Clear-<ProviderType>-Cache` — clear entries safely
+   - `Close-<ProviderType>` — release resources before removal
 
 3. Register:
 ```powershell
@@ -551,7 +562,9 @@ Get-ExpressionCache -ProviderName $myProvider.Name -ScriptBlock { ... }
 
 Providers included:
 - **LocalFileSystemCache** – file-based, zero dependencies, with cross-process same-key coordination
-- **RedisCache** – native RESP protocol, zero dependencies, reference implementation for remote/shared caching
+- **Redis** – native RESP protocol, zero dependencies, reference implementation for remote/shared caching
+
+The default Redis prefix includes the module major version. Moving from `0.x` to `1.x` therefore starts a fresh default Redis cache namespace (`v0` to `v1`) unless you configure `Prefix` explicitly.
 
 Potential extensions:
 - In-memory cache (see `samples/implementing-yourown-provider/`)

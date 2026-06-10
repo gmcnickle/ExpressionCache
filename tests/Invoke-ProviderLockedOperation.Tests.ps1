@@ -1,6 +1,6 @@
 #requires -Modules Pester
 
-Describe 'With-ProviderLock' {
+Describe 'Invoke-ProviderLockedOperation' {
 
     BeforeAll {
         $here = $PSScriptRoot
@@ -31,7 +31,7 @@ Describe 'With-ProviderLock' {
             Add-ExpressionCacheProvider -Provider $spec | Out-Null
             $p = Get-ExpressionCacheProvider -ProviderName 'LockExec'
 
-            $result = With-ProviderLock $p { 42 }
+            $result = Invoke-ProviderLockedOperation -Provider $p { 42 }
             $result | Should -Be 42
         }
     }
@@ -48,13 +48,13 @@ Describe 'With-ProviderLock' {
             $p = Get-ExpressionCacheProvider -ProviderName 'LockRelease'
 
             # Force the lock to be created
-            With-ProviderLock $p { $null } | Out-Null
+            Invoke-ProviderLockedOperation -Provider $p { $null } | Out-Null
 
             # Now throw inside the lock
-            try { With-ProviderLock $p { throw 'boom' } } catch { }
+            try { Invoke-ProviderLockedOperation -Provider $p { throw 'boom' } } catch { }
 
             # Lock should be released — we can acquire it again without deadlock
-            $result = With-ProviderLock $p { 'recovered' }
+            $result = Invoke-ProviderLockedOperation -Provider $p { 'recovered' }
             $result | Should -Be 'recovered'
         }
     }
@@ -73,7 +73,7 @@ Describe 'With-ProviderLock' {
             # __Lock should not exist yet (lazy creation)
             $hasLockBefore = $null -ne $p.__Lock
 
-            With-ProviderLock $p { $null } | Out-Null
+            Invoke-ProviderLockedOperation -Provider $p { $null } | Out-Null
 
             # Now it should exist
             $p.__Lock | Should -Not -BeNullOrEmpty

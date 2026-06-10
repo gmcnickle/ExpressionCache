@@ -33,7 +33,7 @@ function Clear-LocalFileSystem-Cache {
     }
 
     # Block same-process readers/writers while clearing
-    With-ProviderLock $provider {
+    Invoke-ProviderLockedOperation -Provider $provider {
         if (Test-Path -LiteralPath $folder) {
             Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
         }

@@ -37,7 +37,7 @@ Describe 'Remove-ExpressionCacheProvider' {
 
                 Remove-ExpressionCacheProvider -ProviderName 'Removable' -Confirm:$false
 
-                $after = Get-ExpressionCacheProvider -ProviderName 'Removable' -NoFallback
+                $after = Get-ExpressionCacheProvider -ProviderName 'Removable' -ErrorAction SilentlyContinue
                 $after | Should -BeNullOrEmpty
             }
         }
@@ -53,14 +53,30 @@ Describe 'Remove-ExpressionCacheProvider' {
                 Add-ExpressionCacheProvider -Provider $spec | Out-Null
                 Remove-ExpressionCacheProvider -ProviderName 'CASETEST' -Confirm:$false
 
-                $result = Get-ExpressionCacheProvider -ProviderName 'CaseTest' -NoFallback
+                $result = Get-ExpressionCacheProvider -ProviderName 'CaseTest' -ErrorAction SilentlyContinue
                 $result | Should -BeNullOrEmpty
             }
         }
 
-        It 'does not throw when provider does not exist' {
-            # Non-existent provider emits a warning but should not throw
-            { Remove-ExpressionCacheProvider -ProviderName 'DoesNotExist' -WarningAction SilentlyContinue } | Should -Not -Throw
+        It 'writes a non-terminating error when provider does not exist' {
+            $errors = @()
+            $null = Remove-ExpressionCacheProvider -ProviderName 'DoesNotExist' -ErrorVariable +errors
+            $errors | Should -HaveCount 1
+            $errors[0].CategoryInfo.Category | Should -Be 'ObjectNotFound'
+        }
+
+        It 'accepts Name as an alias for ProviderName' {
+            InModuleScope ExpressionCache {
+                Add-ExpressionCacheProvider -Provider @{
+                    Name        = 'AliasRemove'
+                    GetOrCreate = 'Get-LocalFileSystem-CachedValue'
+                    Config      = [pscustomobject]@{}
+                } | Out-Null
+
+                Remove-ExpressionCacheProvider -Name 'AliasRemove' -Confirm:$false
+                Get-ExpressionCacheProvider -Name 'AliasRemove' -ErrorAction SilentlyContinue |
+                    Should -BeNullOrEmpty
+            }
         }
     }
 
@@ -128,8 +144,31 @@ Describe 'Remove-ExpressionCacheProvider' {
 
                 'PipeA', 'PipeB' | Remove-ExpressionCacheProvider -Confirm:$false
 
-                (Get-ExpressionCacheProvider -ProviderName 'PipeA' -NoFallback) | Should -BeNullOrEmpty
-                (Get-ExpressionCacheProvider -ProviderName 'PipeB' -NoFallback) | Should -BeNullOrEmpty
+                (Get-ExpressionCacheProvider -ProviderName 'PipeA' -ErrorAction SilentlyContinue) | Should -BeNullOrEmpty
+                (Get-ExpressionCacheProvider -ProviderName 'PipeB' -ErrorAction SilentlyContinue) | Should -BeNullOrEmpty
+            }
+        }
+    }
+
+    Context 'Teardown hook' {
+        It 'invokes Teardown before removing the provider' {
+            InModuleScope ExpressionCache {
+                $script:TeardownProviderName = $null
+
+                function Close-TestProvider {
+                    param([string]$ProviderName)
+                    $script:TeardownProviderName = $ProviderName
+                }
+
+                Add-ExpressionCacheProvider -Provider @{
+                    Name        = 'TeardownTest'
+                    GetOrCreate = 'Get-LocalFileSystem-CachedValue'
+                    Teardown    = 'Close-TestProvider'
+                    Config      = [pscustomobject]@{}
+                } | Out-Null
+
+                Remove-ExpressionCacheProvider -ProviderName 'TeardownTest' -Confirm:$false
+                $script:TeardownProviderName | Should -Be 'TeardownTest'
             }
         }
     }
