@@ -2,6 +2,24 @@
 All notable changes to **ExpressionCache** will be documented in this file.  
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+### Added
+- Cross-process single-flight coordination for `LocalFileSystemCache`, preventing duplicate computation when multiple processes miss the same key concurrently.
+- Distributed per-key locking for Redis cache misses.
+- Optional Redis provider settings:
+  - `WaitSeconds` controls how long a caller waits for another worker computing the same key.
+  - `LockSeconds` controls the distributed lock lifetime for long-running computations.
+- Redis concurrency tests covering lock acquisition, token-safe release, and client lease synchronization.
+
+### Changed
+- Redis access using a shared provider client is synchronized for connection safety.
+- Provider state reads and writes now participate consistently in provider locking.
+- Local filesystem cache replacement is atomic during concurrent writes.
+
+### Fixed
+- Concurrent cache misses across runspaces or processes could execute the same expression more than once.
+- Local filesystem cache writes could briefly remove the destination before replacing it.
+
 ## [0.3.1] - 2026-04-16
 ### Fixed
 - Thread safety: `$script:__ParamCache` changed from plain hashtable to `ConcurrentDictionary` to prevent corruption under concurrent access.
