@@ -60,7 +60,8 @@ Describe 'Remove-ExpressionCacheProvider' {
 
         It 'writes a non-terminating error when provider does not exist' {
             $errors = @()
-            $null = Remove-ExpressionCacheProvider -ProviderName 'DoesNotExist' -ErrorVariable +errors
+            $null = Remove-ExpressionCacheProvider -ProviderName 'DoesNotExist' `
+                -ErrorAction SilentlyContinue -ErrorVariable +errors
             $errors | Should -HaveCount 1
             $errors[0].CategoryInfo.Category | Should -Be 'ObjectNotFound'
         }

@@ -53,7 +53,8 @@ Describe 'Get-ExpressionCacheProvider' {
 
     It 'writes a non-terminating error when provider does not exist' {
         $errors = @()
-        $result = Get-ExpressionCacheProvider -ProviderName 'NeverRegistered' -ErrorVariable +errors
+        $result = Get-ExpressionCacheProvider -ProviderName 'NeverRegistered' `
+            -ErrorAction SilentlyContinue -ErrorVariable +errors
         $result | Should -BeNullOrEmpty
         $errors | Should -HaveCount 1
         $errors[0].CategoryInfo.Category | Should -Be 'ObjectNotFound'

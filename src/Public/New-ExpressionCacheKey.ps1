@@ -29,7 +29,7 @@ function New-ExpressionCacheKey {
     )
 
     $src = ($ScriptBlock.ToString() -split "`r?`n" | ForEach-Object { $_.Trim() }) -join ' '
-    $Arguments = if ($Arguments) { ($Arguments | ConvertTo-Json -Depth 5) } else { '' }
+    $Arguments = if ($Arguments) { ($Arguments | ConvertTo-Json -Depth 5 -Compress) } else { '' }
     
     "$src|$Arguments" | Get-ExpressionCacheHash
 }

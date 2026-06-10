@@ -53,7 +53,7 @@ Describe 'ExpressionCache public contract' {
         $scriptBlock = [scriptblock]::Create('param($x, $y) $x + $y')
 
         New-ExpressionCacheKey -ScriptBlock $scriptBlock -Arguments 1, 2 |
-            Should -Be 'a3fbd9b1c56592ea4c68d315c0079b8091dca036f2e0d1cfee688c5dd589974d'
+            Should -Be '39d101a3c98cb9d67e67872421570bf3a879c487ef9798c7a6282d7c8bc362d1'
     }
 }
 
