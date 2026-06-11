@@ -2,7 +2,7 @@
 All notable changes to **ExpressionCache** will be documented in this file.  
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.0] - 2026-06-11
 ### Added
 - Cross-process single-flight coordination for `LocalFileSystemCache`, preventing duplicate computation when multiple processes miss the same key concurrently.
 - Distributed per-key locking for Redis cache misses.
